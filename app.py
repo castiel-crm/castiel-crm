@@ -1,9 +1,9 @@
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 import uvicorn
-from funciones_crm import obtener_clientes, registrar_cliente, registrar_seguimiento, obtener_historial_cliente
-
+from funciones_crm import obtener_clientes, registrar_cliente, registrar_seguimiento, obtener_historial_cliente, inicializar_base_de_datos
 app = FastAPI(title="Corporación Castiel CRM")
+inicializar_base_de_datos()
 
 @app.get("/", response_class=HTMLResponse)
 def index():
