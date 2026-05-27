@@ -7,6 +7,9 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 app = FastAPI()
+@app.on_event("startup")
+def iniciar_sistema():
+    inicializar_base_de_datos()
 
 # Configuración de cookies seguras para la sesión
 app.add_middleware(SessionMiddleware, secret_key="super-secret-key-castiel-crm")
