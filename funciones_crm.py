@@ -27,3 +27,34 @@ def obtener_clientes():
  l = c.fetchall()  
  conn.close()  
  return l 
+def inicializar_base_de_datos():
+    conn = sqlite3.connect('castiel_crm.db')
+    c = conn.cursor()
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS clientes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre_cliente TEXT,
+        nombre_negocio TEXT,
+        telefono TEXT,
+        detalle TEXT,
+        estado TEXT,
+        vendedor TEXT,
+        producto TEXT,
+        comision REAL
+    )
+    """)
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS seguimientos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id_cliente INTEGER,
+        fecha TEXT,
+        nombre_asesor TEXT,
+        producto_interes TEXT,
+        tipo_interaccion TEXT,
+        detalle_seguimiento TEXT,
+        estado_seguimiento TEXT,
+        FOREIGN KEY(id_cliente) REFERENCES clientes(id)
+    )
+    """)
+    conn.commit()
+    conn.close()
