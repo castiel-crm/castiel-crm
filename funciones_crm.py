@@ -1,23 +1,20 @@
-import sqlite3  
-from datetime import datetime  
+import sqlite3
+from datetime import datetime
+
 def registrar_cliente(n, b, t, d, g):
     conn = sqlite3.connect('castiel_crm.db')
     c = conn.cursor()
-    # Mapeamos los 5 datos en orden: nombre_cliente, nombre_negocio, telefono, detalle (para dirección) y estado (para giro)
     c.execute("INSERT INTO clientes (nombre_cliente, nombre_negocio, telefono, detalle, estado) VALUES (?, ?, ?, ?, ?)", (n, b, t, d, g))
     conn.commit()
     conn.close()
- def registrar_seguimiento(id_c, ase, prod, tip, det, est):
+
+def registrar_seguimiento(id_c, ase, prod, tip, det, est):
     conn = sqlite3.connect('castiel_crm.db')
     c = conn.cursor()
     f = datetime.now().strftime("%Y-%m-%d %H:%M")
-    
-    # Insertamos los 6 datos en las columnas exactas de tu tabla seguimientos
-    c.execute("""
-        INSERT INTO seguimientos (id_cliente, fecha, nombre_asesor, producto_interes, tipo_interaccion, detalle_seguimiento, estado_seguimiento) 
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (id_c, f, ase, prod, tip, det, est))
-    
+    c.execute("INSERT INTO seguimientos (id_cliente, fecha, nombre_asesor, producto_interes, tipo_interaccion, detalle_seguimiento, estado_seguimiento) VALUES (?, ?, ?, ?, ?, ?, ?)", (id_c, f, ase, prod, tip, det, est))
+    conn.commit()
+    conn.close()
     conn.commit()
     conn.close()
 def obtener_historial_cliente(id_c):  
