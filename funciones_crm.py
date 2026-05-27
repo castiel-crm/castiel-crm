@@ -15,15 +15,15 @@ def registrar_seguimiento(id_c, ase, prod, tip, det, est):
     c.execute("INSERT INTO seguimientos (id_cliente, fecha, nombre_asesor, producto_interes, tipo_interaccion, detalle_seguimiento, estado_seguimiento) VALUES (?, ?, ?, ?, ?, ?, ?)", (id_c, f, ase, prod, tip, det, est))
     conn.commit()
     conn.close()
-    conn.commit()
+
+def obtener_historial_cliente(id_c):
+    conn = sqlite3.connect('castiel_crm.db')
+    c = conn.cursor()
+    c.execute("SELECT fecha, nombre_asesor, producto_interes, tipo_interaccion, detalle_seguimiento, estado_seguimiento FROM seguimientos WHERE id_cliente = ? ORDER BY fecha DESC", (id_c,))
+    h = c.fetchall()
     conn.close()
-def obtener_historial_cliente(id_c):  
- conn = sqlite3.connect('castiel_crm.db')  
- c = conn.cursor()  
- c.execute("SELECT fecha, nombre_asesor, producto_interes, tipo_interaccion, detalles, estatus FROM seguimientos WHERE id_cliente = ? ORDER BY fecha DESC", (id_c,))  
- h = c.fetchall()  
- conn.close()  
- return h  
+    return h
+
 def obtener_clientes():
     conn = sqlite3.connect('castiel_crm.db')
     c = conn.cursor()
@@ -31,11 +31,11 @@ def obtener_clientes():
     l = c.fetchall()
     conn.close()
     return l
+
 def inicializar_base_de_datos():
     conn = sqlite3.connect('castiel_crm.db')
     c = conn.cursor()
     
-    # Creamos la tabla de clientes si no existe
     c.execute("""
     CREATE TABLE IF NOT EXISTS clientes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,7 +50,6 @@ def inicializar_base_de_datos():
     )
     """)
     
-    # Creamos la tabla de seguimientos si no existe
     c.execute("""
     CREATE TABLE IF NOT EXISTS seguimientos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
