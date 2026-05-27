@@ -24,16 +24,18 @@ def obtener_historial_cliente(id_c):
  h = c.fetchall()  
  conn.close()  
  return h  
-def obtener_clientes():  
- conn = sqlite3.connect('castiel_crm.db')  
- c = conn.cursor()  
- c.execute("SELECT * FROM clientes")  
- l = c.fetchall()  
- conn.close()  
- return l 
+def obtener_clientes():
+    conn = sqlite3.connect('castiel_crm.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM clientes")
+    l = c.fetchall()
+    conn.close()
+    return l
 def inicializar_base_de_datos():
     conn = sqlite3.connect('castiel_crm.db')
     c = conn.cursor()
+    
+    # Creamos la tabla de clientes si no existe
     c.execute("""
     CREATE TABLE IF NOT EXISTS clientes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,6 +49,8 @@ def inicializar_base_de_datos():
         comision REAL
     )
     """)
+    
+    # Creamos la tabla de seguimientos si no existe
     c.execute("""
     CREATE TABLE IF NOT EXISTS seguimientos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,8 +61,9 @@ def inicializar_base_de_datos():
         tipo_interaccion TEXT,
         detalle_seguimiento TEXT,
         estado_seguimiento TEXT,
-        FOREIGN KEY(id_cliente) REFERENCES clientes(id)
+        FOREIGN KEY (id_cliente) REFERENCES clientes (id)
     )
     """)
+    
     conn.commit()
     conn.close()
