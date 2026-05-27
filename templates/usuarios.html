@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Control de Usuarios - Corporación CASTIEL S.A.</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root { --azul-corp: #0B3C5D; --azul-oscuro: #062337; --gris-fondo: #F5F7FA; }
+        body { background-color: var(--gris-fondo); }
+        .sidebar { background-color: var(--azul-corp); }
+        .btn-primary { background-color: var(--azul-corp); }
+        .btn-primary:hover { background-color: var(--azul-oscuro); }
+    </style>
+</head>
+<body class="text-gray-800 font-sans flex h-screen overflow-hidden">
+
+    <!-- Menú Lateral -->
+    <div class="sidebar w-64 text-white flex flex-col justify-between p-4 shadow-xl shrink-0">
+        <div>
+            <div class="mb-8 text-center border-b border-blue-400 pb-4">
+                <h1 class="text-xl font-black tracking-wider">CORPORACIÓN</h1>
+                <h2 class="text-2xl font-black text-amber-400 tracking-widest">CASTIEL</h2>
+                <p class="text-xs text-blue-200 mt-1 uppercase tracking-widest">Seguridad • Visión • Liderazgo</p>
+            </div>
+            <nav class="space-y-2">
+                <a href="/panel" class="flex items-center space-x-3 p-3 rounded-lg hover:bg-blue-800 transition">
+                    <i data-lucide="users"></i> <span>Lista de Clientes</span>
+                </a>
+                <a href="/comisiones" class="flex items-center space-x-3 p-3 rounded-lg hover:bg-blue-800 transition">
+                    <i data-lucide="wallet"></i> <span>Comisiones</span>
+                </a>
+                <a href="/usuarios" class="flex items-center space-x-3 p-3 rounded-lg bg-blue-900 font-bold border-l-4 border-amber-400 transition">
+                    <i data-lucide="shield-check"></i> <span>Control de Usuarios</span>
+                </a>
+            </nav>
+        </div>
+        <a href="/logout" class="flex items-center justify-center space-x-2 p-3 bg-red-600 hover:bg-red-700 rounded-lg font-bold transition shadow-md">
+            <i data-lucide="log-out"></i> <span>Cerrar Sesión</span>
+        </a>
+    </div>
+
+    <!-- Contenido Principal -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+        <!-- Encabezado -->
+        <header class="bg-white border-b border-gray-200 p-4 flex justify-between items-center shadow-sm shrink-0">
+            <h2 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                <i data-lucide="shield-check" class="text-blue-900"></i> Gestión de Usuarios y Permisos Modulares
+            </h2>
+            <div class="flex items-center space-x-4">
+                <span class="text-sm text-gray-600 bg-gray-100 px-3 py-1.5 rounded-full border border-gray-200 font-medium">
+                    Conectado: <strong class="text-blue-950">{{ usuario }} ({{ rol }})</strong>
+                </span>
+                <button onclick="toggleModal('modalUsuario')" class="btn-primary text-white font-bold px-4 py-2 rounded-lg shadow flex items-center gap-2 cursor-pointer transition">
+                    <i data-lucide="user-plus"></i> Nuevo Asesor / Secretaria
+                </button>
+            </div>
+        </header>
+
+        <!-- Tabla de Usuarios -->
+        <main class="flex-1 overflow-y-auto p-6">
+            <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-gray-100 text-gray-700 uppercase text-xs font-bold border-b border-gray-200">
+                            <th class="p-4">Usuario</th>
+                            <th class="p-4">Nombre Completo</th>
+                            <th class="p-4">Tipo</th>
+                            <th class="p-4 text-center">Permisos del Usuario (Marcar para activar)</th>
+                            <th class="p-4 text-center">Estado</th>
+                            <th class="p-4 text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200 text-sm">
+                        {% for u in usuarios %}
+                        <tr class="hover:bg-gray-50 transition">
+                            <td class="p-4 font-bold text-blue-900">@{{ u.usuario }}</td>
+                            <td class="p-4 font-medium">{{ u.nombre_completo }}</td>
+                            <td class="p-4">
+                                <span class="px-2.5 py-1 rounded-full text-xs font-bold {% if u.rol == 'admin' %}bg-purple-100 text-purple-800{% else %}bg-blue-100 text-blue-800{% endif %}">
+                                    {{ u.rol | uppercase }}
+                                </span>
+                            </td>
+                            <!-- Configuración de Permisos Modulares -->
+                            <td class="p-4">
+                                {% if u.usuario != 'admin' %}
+                                <form action="/usuarios/actualizar-permisos/{{ u.id }}" method="POST" class="flex justify-center items-center gap-6 bg-gray-50 p-2 rounded-lg border border-gray-100">
+                                    <label class="flex items-center space-x-1.5 cursor-pointer text-xs font-semibold">
+                                        <input type="checkbox" name="p_ver_c" value="1" {% if u.p_ver_clientes %}checked{% endif %} onchange="this.form.submit()" class="w-4 h-4 text-blue-600 rounded">
+                                        <span>Ver Clientes</span>
+                                    </label>
+                                    <label class="flex items-center space-x-1.5 cursor-pointer text-xs font-semibold">
+                                        <input type="checkbox" name="p_gest_c" value="1" {% if u.p_gestionar_clientes %}checked{% endif %} onchange="this.form.submit()" class="w-4 h-4 text-blue-600 rounded">
+                                        <span>Modificar Datos</span>
+                                    </label>
+                                    <label class="flex items-center space-x-1.5 cursor-pointer text-xs font-semibold">
+                                        <input type="checkbox" name="p_ver_com" value="1" {% if u.p_ver_comisiones %}checked{% endif %} onchange="this.form.submit()" class="w-4 h-4 text-blue-600 rounded">
+                                        <span>Ver Comisiones</span>
+                                    </label>
+                                </form>
+                                {% else %}
+                                <div class="text-center text-xs text-gray-400 font-medium italic">Acceso total absoluto (Administrador)</div>
+                                {% endif %}
+                            </td>
+                            <td class="p-4 text-center">
+                                <span class="px-2.5 py-1 rounded-full text-xs font-bold {% if u.estado == 'Activo' %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
+                                    {{ u.estado }}
+                                </span>
+                            </td>
+                            <td class="p-4 text-center">
+                                {% if u.usuario != 'admin' %}
+                                <div class="flex justify-center items-center gap-2">
+                                    <form action="/usuarios/cambiar-estado/{{ u.id }}" method="POST">
+                                        <button type="submit" class="p-2 {% if u.estado == 'Activo' %}bg-amber-100 text-amber-700 hover:bg-amber-200{% else %}bg-green-100 text-green-700 hover:bg-green-200{% endif %} rounded-lg transition" title="Cambiar Estado / Bloquear">
+                                            <i data-lucide="ban" class="w-4 h-4"></i>
+                                        </button>
+                                    </form>
+                                    <form action="/usuarios/eliminar/{{ u.id }}" method="POST" onsubmit="return confirm('¿Seguro que deseas eliminar permanentemente a este usuario?');">
+                                        <button type="submit" class="p-2 bg-red-100 text-red-700 hover:bg-red-200 rounded-lg transition" title="Eliminar definitivamente">
+                                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                                {% else %}
+                                <span class="text-xs text-gray-400 italic">Inalterable</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <!-- VENTANA MODAL: CREAR NUEVO USUARIO -->
+    <div id="modalUsuario" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 backdrop-blur-xs z-50">
+        <div class="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden border border-gray-100">
+            <div class="btn-primary text-white p-4 flex justify-between items-center">
+                <h3 class="font-bold text-lg flex items-center gap-2"><i data-lucide="user-plus"></i> Registrar Nuevo Acceso</h3>
+                <button type="button" onclick="toggleModal('modalUsuario')" class="text-white hover:text-gray-200 text-xl font-bold cursor-pointer">&times;</button>
+            </div>
+            <form action="/usuarios/crear" method="POST" class="p-6 space-y-4">
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-500 mb-1">Nombre Completo</label>
+                    <input type="text" name="nombre_completo" required class="w-full border border-gray-300 rounded-lg p-2.5 focus:outline-none focus:border-blue-900" placeholder="Ej. María López">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-500 mb-1">Nombre de Usuario</label>
+                    <input type="text" name="usuario" required class="w-full border border-gray-300 rounded-lg p-2.5 focus:outline-none focus:border-blue-900" placeholder="Ej. maria.castiel">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-500 mb-1">Contraseña de Ingreso</label>
+                    <input type="password" name="contrasena" required class="w-full border border-gray-300 rounded-lg p-2.5 focus:outline-none focus:border-blue-900" placeholder="••••••••">
+                </div>
+                
+                <div class="bg-gray-50 p-3 rounded-lg border border-gray-200 space-y-2">
+                    <label class="block text-xs font-black uppercase text-blue-900 mb-1">Permisos Iniciales:</label>
+                    <div class="flex flex-col space-y-2">
+                        <label class="flex items-center space-x-2 text-xs font-medium cursor-pointer">
+                            <input type="checkbox" name="p_ver_c" value="1" checked class="rounded text-blue-900">
+                            <span>Permitir ver la Lista de Clientes</span>
+                        </label>
+                        <label class="flex items-center space-x-2 text-xs font-medium cursor-pointer">
+                            <input type="checkbox" name="p_gest_c" value="1" checked class="rounded text-blue-900">
+                            <span>Permitir Agregar y Eliminar registros</span>
+                        </label>
+                        <label class="flex items-center space-x-2 text-xs font-medium cursor-pointer">
+                            <input type="checkbox" name="p_ver_com" value="1" class="rounded text-blue-900">
+                            <span>Permitir ver el Módulo de Comisiones</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" onclick="toggleModal('modalUsuario')" class="px-4 py-2 bg-gray-200 text-gray-700 font-bold rounded-lg hover:bg-gray-300 transition cursor-pointer">Cancelar</button>
+                    <button type="submit" class="px-5 py-2 btn-primary text-white font-bold rounded-lg shadow transition cursor-pointer">Guardar Cuenta</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+        function toggleModal(id) {
+            const modal = document.getElementById(id);
+            modal.classList.toggle('hidden');
+        }
+    </script>
+</body>
+</html>
