@@ -1,213 +1,283 @@
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, Request, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
-import uvicorn
-from funciones_crm import obtener_clientes, registrar_cliente, registrar_seguimiento, obtener_historial_cliente, inicializar_base_de_datos
-app = FastAPI(title="Corporación Castiel CRM")
+from fastapi.staticfiles import StaticFiles
+import sqlite3
+from funciones_crm import inicializar_base_de_datos, registrar_cliente, registrar_seguimiento, obtener_historial_cliente, obtener_clientes
+from starlette.middleware.sessions import SessionMiddleware
+
+app = FastAPI()
+
+# Configuración de Seguridad: Añadimos una clave secreta para proteger las sesiones de usuario
+app.add_middleware(SessionMiddleware, secret_key="CastielCorpCRMSecretKey_ChangeMe")
+
+# Inicializamos la base de datos al encender el servidor
 inicializar_base_de_datos()
 
+# ==========================================
+# 1. CONTROL DE ACCESO (LOGÍN VISUAL)
+# ==========================================
+
+@app.get("/login", response_class=HTMLResponse)
+def vista_login(request: Request, error: str = None):
+    # Genera una pantalla de inicio de sesión elegante y limpia
+    mensaje_error = f'<p style="color: #e74c3c; background: #fdf2f2; padding: 10px; border-radius: 5px; text-align: center; font-weight: bold;">{error}</p>' if error else ''
+    
+    html_login = f"""
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <title>Iniciar Sesión - Corporación CASTIEL</title>
+        <style>
+            body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6f9; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }}
+            .login-card {{ background: #ffffff; padding: 40px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); width: 100%; max-width: 360px; }}
+            .brand {{ text-align: center; margin-bottom: 30px; }}
+            .brand h2 {{ margin: 0; color: #1a252f; letter-spacing: 1px; font-size: 24px; }}
+            .brand p {{ margin: 5px 0 0 0; color: #7f8c8d; font-size: 12px; font-weight: bold; }}
+            .form-group {{ margin-bottom: 20px; }}
+            .form-group label {{ display: block; margin-bottom: 8px; color: #34495e; font-size: 14px; font-weight: 500; }}
+            .form-group input {{ width: 100%; padding: 10px; border: 1px solid #dcdde1; border-radius: 6px; box-sizing: border-box; font-size: 14px; }}
+            .form-group input:focus {{ border-color: #2c3e50; outline: none; }}
+            .btn-submit {{ width: 100%; padding: 12px; background: #2c3e50; border: none; color: white; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 14px; transition: background 0.2s; }}
+            .btn-submit:hover {{ background: #1a252f; }}
+        </style>
+    </head>
+    <body>
+        <div class="login-card">
+            <div class="brand">
+                <h2>CORPORACIÓN</h2>
+                <h2><strong>CASTIEL</strong></h2>
+                <p>SEGURIDAD • VISIÓN • LIDERAZGO</p>
+            </div>
+            {mensaje_error}
+            <form action="/login" method="post">
+                <div class="form-group">
+                    <label>Usuario</label>
+                    <input type="text" name="username" required placeholder="Escribe tu usuario">
+                </div>
+                <div class="form-group">
+                    <label>Contraseña</label>
+                    <input type="password" name="password" required placeholder="••••••••">
+                </div>
+                <button type="submit" class="btn-submit">Ingresar al Sistema</button>
+            </form>
+        </div>
+    </body>
+    </html>
+    """
+    return html_login
+
+@app.post("/login")
+def procesar_login(request: Request, username: str = Form(...), password: str = Form(...)):
+    # Conectamos a la base de datos para verificar si el usuario existe
+    conn = sqlite3.connect('castiel_crm.db')
+    c = conn.cursor()
+    c.execute("SELECT rol FROM usuarios WHERE usuario = ? AND contrasena = ?", (username, password))
+    user = c.fetchone()
+    conn.close()
+    
+    if user:
+        # Guardamos los datos de acceso del usuario en la sesión del navegador
+        request.session["usuario"] = username
+        request.session["rol"] = user[0]
+        return RedirectResponse(url="/", status_code=303)
+    else:
+        return RedirectResponse(url="/login?error=Usuario o contraseña incorrectos", status_code=303)
+
+@app.get("/logout")
+def cerrar_sesion(request: Request):
+    # Borra la sesión del usuario del navegador y lo expulsa
+    request.session.clear()
+    return RedirectResponse(url="/login", status_code=303)
+
+
+# ==========================================
+# 2. VISTAS PRINCIPALES DEL CRM (PROTEGIDAS)
+# ==========================================
+
 @app.get("/", response_class=HTMLResponse)
-def index():
+def index(request: Request):
+    # Si el usuario no ha iniciado sesión, lo redirige automáticamente al Login
+    if "usuario" not in request.session:
+        return RedirectResponse(url="/login", status_code=303)
+        
     clientes = obtener_clientes()
     
-    # Aquí embebemos el diseño que te gustó, pero ahora es dinámico
+    # Renderizamos la lista de clientes en la tabla visual
+    tabla_clientes = ""
+    for cli in clientes:
+        tabla_clientes += f"""
+        <tr>
+            <td>#{cli[0]}</td>
+            <td><strong>{cli[1]}</strong></td>
+            <td>{cli[2]}</td>
+            <td>{cli[3]}</td>
+            <td>{cli[4]}</td>
+            <td><span class="badge">{cli[5]}</span></td>
+            <td>
+                <button class="btn-action" onclick="abrirModalSeguimiento({cli[0]}, '{cli[1]}')">＋ Seguimiento</button>
+                <button class="btn-action btn-secondary" onclick="verHistorial({cli[0]}, '{cli[1]}')">👁 Ver Historial</button>
+            </td>
+        </tr>
+        """
+
     html_content = f"""
     <!DOCTYPE html>
     <html lang="es">
     <head>
         <meta charset="UTF-8">
-        <title>Panel de Control - Corporación Castiel S.A.</title>
-        <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-        <script src="https://unpkg.com/lucide@latest"></script>
+        <title>Panel de Control - Corporación CASTIEL</title>
         <style>
-            :root {{ --azul-corp: #0B3C5D; --azul-oscuro: #062337; --gris-fondo: #F5F7FA; }}
+            body {{ font-family: 'Segoe UI', Arial, sans-serif; margin: 0; background-color: #f8f9fa; display: flex; color: #333; }}
+            .sidebar {{ width: 250px; background-color: #2c3e50; color: white; min-height: 100vh; padding: 20px; box-sizing: border-box; }}
+            .sidebar h2 {{ margin: 0; font-size: 20px; letter-spacing: 1px; text-align: center; }}
+            .sidebar p {{ margin: 5px 0 30px 0; font-size: 10px; color: #bdc3c7; text-align: center; letter-spacing: 2px; }}
+            .menu-item {{ padding: 12px 15px; color: #ecf0f1; text-decoration: none; display: block; border-radius: 5px; font-weight: bold; margin-bottom: 5px; }}
+            .menu-item:hover, .menu-item.active {{ background-color: #34495e; color: white; }}
+            .logout-btn {{ background: #c0392b; text-align: center; margin-top: 30px; }}
+            .logout-btn:hover {{ background: #e74c3c; }}
+            .main-content {{ flex-grow: 1; padding: 40px; box-sizing: border-box; }}
+            .header-panel {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; border-bottom: 2px solid #eaeaea; padding-bottom: 15px; }}
+            .header-panel h1 {{ margin: 0; color: #2c3e50; font-size: 26px; }}
+            .user-tag {{ font-size: 14px; color: #7f8c8d; background: #eef1f4; padding: 6px 12px; border-radius: 20px; font-weight: bold; }}
+            .btn-primary {{ background-color: #2c3e50; color: white; border: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; font-size: 14px; }}
+            .btn-primary:hover {{ background-color: #1a252f; }}
+            table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.02); }}
+            th, td {{ padding: 15px; text-align: left; border-bottom: 1px solid #f1f2f6; }}
+            th {{ background-color: #f8f9fa; color: #7f8c8d; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }}
+            .badge {{ background-color: #ffeaa7; color: #d63031; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; }}
+            .btn-action {{ background-color: #2ecc71; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; margin-right: 5px; }}
+            .btn-action:hover {{ background-color: #27ae60; }}
+            .btn-secondary {{ background-color: #3498db; }}
+            .btn-secondary:hover {{ background-color: #2980b9; }}
+            .modal {{ display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 1000; }}
+            .modal-content {{ background: white; padding: 30px; border-radius: 8px; width: 450px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); position: relative; }}
+            .modal-content h3 {{ margin-top: 0; color: #2c3e50; border-bottom: 1px solid #eee; padding-bottom: 10px; }}
+            .form-input {{ width: 100%; padding: 8px; margin: 8px 0 15px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }}
+            .close-modal {{ position: absolute; top: 15px; right: 15px; cursor: pointer; font-size: 20px; color: #aaa; }}
         </style>
     </head>
-    <body class="bg-[var(--gris-fondo)] text-gray-800 font-sans flex h-screen overflow-hidden">
-
-        <aside class="w-64 bg-white border-r border-gray-200 flex flex-col justify-between shadow-sm">
-            <div>
-                <div class="p-6 border-b border-gray-100 text-center">
-                    <div class="text-[var(--azul-corp)] font-bold text-lg tracking-wider">CORPORACIÓN</div>
-                    <div class="text-[var(--azul-oscuro)] font-black text-2xl tracking-widest -mt-1">CASTIEL</div>
-                    <div class="text-gray-400 text-[10px] tracking-widest uppercase border-t border-gray-100 mt-1 pt-1">
-                        INTEGRIDAD • VISIÓN • LIDERAZGO
-                    </div>
+    <body>
+        <div class="sidebar">
+            <h2>CORPORACIÓN</h2>
+            <h2><strong>CASTIEL</strong></h2>
+            <p>SEGURIDAD • VISIÓN • LIDERAZGO</p>
+            <a href="/" class="menu-item active">📋 Lista de Clientes</a>
+            <a href="/logout" class="menu-item logout-btn">🚪 Cerrar Sesión</a>
+        </div>
+        <div class="main-content">
+            <div class="header-panel">
+                <div>
+                    <h1>Panel de Control de Clientes</h1>
                 </div>
-                <nav class="p-4 space-y-1">
-                    <a href="/" class="flex items-center space-x-3 px-4 py-3 rounded-lg bg-blue-50 text-[var(--azul-corp)] font-medium">
-                        <i data-lucide="users" class="w-5 h-5"></i>
-                        <span>Lista de Clientes</span>
-                    </a>
-                </nav>
-            </div>
-            <div class="p-4 border-t border-gray-100 text-xs text-gray-400 text-center">Castiel CRM v1.1</div>
-        </aside>
-
-        <main class="flex-1 flex flex-col overflow-hidden">
-            <header class="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-8 shadow-xs">
-                <h1 class="text-xl font-bold text-gray-800">Panel de Control de Clientes</h1>
-                <button onclick="toggleModal('modalCliente')" class="bg-[var(--azul-corp)] hover:bg-[var(--azul-oscuro)] text-white font-medium px-4 py-2 rounded-lg text-sm transition flex items-center space-x-2">
-                    <i data-lucide="user-plus" class="w-4 h-4"></i>
-                    <span>Nuevo Cliente</span>
-                </button>
-            </header>
-
-            <div class="flex-1 overflow-y-auto p-8 space-y-6">
-                <div class="bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden">
-                    <table class="w-full text-left border-collapse">
-                        <thead>
-                            <tr class="bg-gray-100/70 border-b border-gray-200 text-xs font-semibold uppercase text-gray-600 tracking-wider">
-                                <th class="py-3 px-6">ID</th>
-                                <th class="py-3 px-6">Cliente</th>
-                                <th class="py-3 px-6">Negocio</th>
-                                <th class="py-3 px-6">Teléfono</th>
-                                <th class="py-3 px-6">Dirección</th>
-                                <th class="py-3 px-6">Giro</th>
-                                <th class="py-3 px-6">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-100 text-sm">
-    """
-    
-    for c in clientes:
-        html_content += f"""
-                            <tr class="hover:bg-gray-50/80 transition">
-                                <td class="py-4 px-6 font-bold text-[var(--azul-corp)]">#{c[0]}</td>
-                                <td class="py-4 px-6 font-medium text-gray-900">{c[1]}</td>
-                                <td class="py-4 px-6 text-gray-600">{c[2]}</td>
-                                <td class="py-4 px-6 text-gray-600">{c[3]}</td>
-                                <td class="py-4 px-6 text-gray-600">{c[4]}</td>
-                                <td class="py-4 px-6 text-gray-600">{c[5]}</td>
-                                <td class="py-4 px-6">
-                                    <button onclick="abrirSeguimiento({c[0]}, '{c[2]}')" class="text-xs bg-gray-100 hover:bg-blue-100 hover:text-[var(--azul-corp)] px-3 py-1.5 rounded-md font-medium transition flex items-center space-x-1">
-                                        <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
-                                        <span>Historial / Agregar</span>
-                                    </button>
-                                </td>
-                            </tr>
-        """
-        
-    html_content += """
-                        </tbody>
-                    </table>
+                <div>
+                    <span class="user-tag">👤 Conectado: {request.session["usuario"]} ({request.session["rol"]})</span>
+                    <button class="btn-primary" style="margin-left: 10px;" onclick="toggleModal('modalCliente')">＋ Nuevo Cliente</button>
                 </div>
             </div>
-        </main>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Cliente</th>
+                        <th>Negocio</th>
+                        <th>Teléfono</th>
+                        <th>Detalle/Dirección</th>
+                        <th>Estado</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {tabla_clientes}
+                </tbody>
+            </table>
+        </div>
 
-        <div id="modalCliente" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4">
-            <div class="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
-                <div class="bg-[var(--azul-corp)] text-white p-4 font-bold">Registrar Nuevo Cliente</div>
-                <form action="/guardar-cliente" method="POST" class="p-6 space-y-4">
-                    <div><label class="block text-xs font-semibold uppercase text-gray-500 mb-1">Nombre del Cliente</label><input type="text" name="nombre" required class="w-full p-2 border border-gray-300 rounded-lg text-sm"></div>
-                    <div><label class="block text-xs font-semibold uppercase text-gray-500 mb-1">Nombre del Negocio</label><input type="text" name="negocio" required class="w-full p-2 border border-gray-300 rounded-lg text-sm"></div>
-                    <div><label class="block text-xs font-semibold uppercase text-gray-500 mb-1">Teléfono</label><input type="text" name="telefono" class="w-full p-2 border border-gray-300 rounded-lg text-sm"></div>
-                    <div><label class="block text-xs font-semibold uppercase text-gray-500 mb-1">Dirección</label><input type="text" name="direccion" class="w-full p-2 border border-gray-300 rounded-lg text-sm"></div>
-                    <div><label class="block text-xs font-semibold uppercase text-gray-500 mb-1">Giro de Negocio</label><input type="text" name="giro" class="w-full p-2 border border-gray-300 rounded-lg text-sm"></div>
-                    <div class="flex justify-end space-x-3 pt-2">
-                        <button type="button" onclick="toggleModal('modalCliente')" class="px-4 py-2 text-sm font-medium text-gray-500 hover:bg-gray-100 rounded-lg">Cancelar</button>
-                        <button type="submit" class="px-4 py-2 text-sm font-medium bg-[var(--azul-corp)] text-white rounded-lg hover:bg-[var(--azul-oscuro)]">Guardar Cliente</button>
-                    </div>
+        <div id="modalCliente" class="modal">
+            <div class="modal-content">
+                <span class="close-modal" onclick="toggleModal('modalCliente')">&times;</span>
+                <h3>Registrar Nuevo Cliente</h3>
+                <form action="/guardar-cliente" method="post">
+                    <label>Nombre del Cliente</label>
+                    <input type="text" name="nombre" class="form-input" required>
+                    <label>Nombre del Negocio</label>
+                    <input type="text" name="negocio" class="form-input" required>
+                    <label>Teléfono</label>
+                    <input type="text" name="telefono" class="form-input" required>
+                    <label>Detalle / Dirección</label>
+                    <input type="text" name="direccion" class="form-input">
+                    <label>Estado Inicial</label>
+                    <input type="text" name="giro" class="form-input" value="Prospecto">
+                    <button type="submit" class="btn-primary" style="width: 100%;">Guardar Cliente</button>
                 </form>
             </div>
         </div>
 
-        <div id="modalSeguimiento" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4">
-            <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[85vh]">
-                <div class="bg-[var(--azul-oscuro)] text-white p-4 font-bold flex justify-between items-center">
-                    <span id="seguimientoTitulo">Seguimiento</span>
-                    <button onclick="toggleModal('modalSeguimiento')" class="text-white hover:text-gray-300">✕</button>
-                </div>
-                
-                <div class="p-6 overflow-y-auto space-y-6 flex-1">
-                    <form action="/guardar-seguimiento" method="POST" class="bg-gray-50 p-4 rounded-xl border border-gray-200 grid grid-cols-2 gap-4">
-                        <input type="hidden" name="id_cliente" id="seg_id_cliente">
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Asesor Responsable</label>
-                            <input type="text" name="asesor" placeholder="Ej. Luis Gómez" required class="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Producto / Servicio de Interés</label>
-                            <select name="producto" class="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm">
-                                <option value="PocketApp">PocketApp (Punto de Venta)</option>
-                                <option value="Chispudo">Chispudo (Punto de Venta)</option>
-                                <option value="Equipo POS">Equipo POS (Computadora/Tablet/Post)</option>
-                                <option value="Software + Equipo">Combo: Software + Equipo POS</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Tipo de Interacción</label>
-                            <select name="tipo" class="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm">
-                                <option value="WhatsApp">WhatsApp</option>
-                                <option value="Llamada">Llamada Telefónica</option>
-                                <option value="Visita">Visita Presencial</option>
-                                <option value="Demo">Demostración de Sistema</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Estatus actual</label>
-                            <select name="estatus" class="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm">
-                                <option value="Interesado">Interesado / En Proceso</option>
-                                <option value="Cotizado">Cotizado</option>
-                                <option value="Venta Exitosa">Venta Cerrada (Éxito)</option>
-                                <option value="No interesado">No interesado</option>
-                            </select>
-                        </div>
-                        <div class="col-span-2">
-                            <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Detalles de la Conversación (Secuencia)</label>
-                            <textarea name="detalles" rows="2" placeholder="Escribe aquí los acuerdos, dudas del cliente o siguientes pasos..." required class="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm"></textarea>
-                        </div>
-                        <div class="col-span-2 flex justify-end">
-                            <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition">Registrar Interacción</button>
-                        </div>
-                    </form>
+        <div id="modalSeguimiento" class="modal">
+            <div class="modal-content">
+                <span class="close-modal" onclick="toggleModal('modalSeguimiento')">&times;</span>
+                <h3>Agregar Seguimiento a: <span id="lblClienteSeguimiento" style="color:#3498db;"></span></h3>
+                <form action="/guardar-seguimiento" method="post">
+                    <input type="hidden" name="id_cliente" id="inputClienteId">
+                    <label>Nombre del Asesor</label>
+                    <input type="text" name="asesor" class="form-input" value="{request.session['usuario']}" readonly>
+                    <label>Producto de Interés</label>
+                    <input type="text" name="producto" class="form-input" required>
+                    <label>Tipo de Interacción</label>
+                    <input type="text" name="tipo" class="form-input" placeholder="Ej. WhatsApp, Llamada, Visita" required>
+                    <label>Detalle del Seguimiento</label>
+                    <textarea name="detalles" class="form-input" style="height:80px;" required></textarea>
+                    <label>Estado Actual del Cliente</label>
+                    <input type="text" name="estatus" class="form-input" value="En Proceso">
+                    <button type="submit" class="btn-primary" style="width: 100%;">Registrar Seguimiento</button>
+                </form>
+            </div>
+        </div>
 
-                    <div>
-                        <h4 class="font-bold text-gray-700 text-sm mb-3 uppercase tracking-wider">Línea de Tiempo del Cliente</h4>
-                        <div id="historialContenedor" class="space-y-4 border-l-2 border-gray-100 pl-6 ml-3">
-                            </div>
+        <div id="modalHistorial" class="modal">
+            <div class="modal-content" style="width: 600px;">
+                <span class="close-modal" onclick="toggleModal('modalHistorial')">&times;</span>
+                <h3>Historial de Seguimientos: <span id="lblClienteHistorial" style="color:#3498db;"></span></h3>
+                <div id="cronologiaHistorial" style="max-height: 400px; overflow-y: auto; padding-right: 10px;">
                     </div>
-                </div>
             </div>
         </div>
 
         <script>
-            lucide.createIcons();
-            function toggleModal(id) {
-                document.getElementById(id).classList.toggle('hidden');
-            }
-            function abrirSeguimiento(id, negocio) {
-                document.getElementById('seg_id_cliente').value = id;
-                document.getElementById('seguimientoTitulo').innerText = "Historial de Seguimiento: " + negocio;
-                
-                // Llamamos al servidor para traer la secuencia de este cliente de forma asíncrona
-                fetch('/historial/' + id)
-                    .then(res => res.json())
-                    .then(data => {
-                        const contenedor = document.getElementById('historialContenedor');
-                        contenedor.innerHTML = "";
-                        if(data.length === 0) {
-                            contenedor.innerHTML = "<p class='text-sm text-gray-400 italic'>No hay registros de seguimiento aún para este cliente.</p>";
-                        }
-                        data.forEach(reg => {
-                            contenedor.innerHTML += `
-                                <div class="relative">
-                                    <div class="absolute -left-[31px] top-1.5 w-4 h-4 bg-blue-500 rounded-full border-4 border-white"></div>
-                                    <div class="text-xs font-semibold text-gray-400">${reg.fecha}</div>
-                                    <div class="bg-gray-50 p-4 rounded-lg border border-gray-100 mt-1 text-sm">
-                                        <div class="grid grid-cols-2 gap-2 mb-1">
-                                            <div><strong>Asesor:</strong> ${reg.asesor}</div>
-                                            <div><strong>Producto:</strong> <span class="text-blue-700 font-medium">${reg.producto}</span></div>
-                                            <div><strong>Vía:</strong> ${reg.tipo}</div>
-                                            <div><strong>Estado:</strong> <span class="px-2 py-0.5 text-xs bg-amber-100 text-amber-800 rounded font-bold">${reg.estatus}</span></div>
-                                        </div>
-                                        <p class="text-gray-600 border-t border-gray-200 pt-1.5 mt-1.5"><strong>Detalles:</strong> ${reg.detalles}</p>
-                                    </div>
-                                </div>
-                            `;
-                        });
-                    });
+            function toggleModal(id) {{
+                var modal = document.getElementById(id);
+                modal.style.display = (modal.style.display === 'flex') ? 'none' : 'flex';
+            }}
+            function abrirModalSeguimiento(id, nombre) {{
+                document.getElementById('inputClienteId').value = id;
+                document.getElementById('lblClienteSeguimiento').innerText = nombre;
                 toggleModal('modalSeguimiento');
-            }
+            }}
+            function verHistorial(id, nombre) {{
+                document.getElementById('lblClienteHistorial').innerText = nombre;
+                var contenedor = document.getElementById('cronologiaHistorial');
+                contenedor.innerHTML = '<p style="text-align:center; color:#7f8c8d;">Cargando historial...</p>';
+                toggleModal('modalHistorial');
+                
+                fetch('/historial/' + id)
+                    .then(response => response.json())
+                    .then(data => {{
+                        contenedor.innerHTML = '';
+                        if(data.length === 0) {{
+                            contenedor.innerHTML = '<p style="text-align:center; color:#7f8c8d; margin-top:20px;">No hay ningún seguimiento registrado para este cliente todavía.</p>';
+                            return;
+                        }}
+                        data.forEach(seg => {{
+                            var item = document.createElement('div');
+                            item.style.borderBottom = '1px solid #eee';
+                            item.style.padding = '12px 0';
+                            item.innerHTML = '<div style="display:flex; justify-content:space-between; font-size:12px; color:#7f8c8d;"><span>📅 ' + seg.fecha + '</span><span>👤 Asesor: <strong>' + seg.asesor + '</strong></span></div>' +
+                                             '<div style="margin: 6px 0; font-size:14px;">' + seg.detalle + '</div>' +
+                                             '<div style="font-size:12px;"><span style="background:#eef1f4; padding:2px 6px; border-radius:4px; color:#34495e;">📦 ' + seg.producto + '</span> <span style="background:#e3f2fd; padding:2px 6px; border-radius:4px; color:#1565c0; margin-left:5px;">💬 ' + seg.tipo + '</span></div>';
+                            contenedor.appendChild(item);
+                        }});
+                    }});
+            }}
         </script>
     </body>
     </html>
@@ -215,21 +285,32 @@ def index():
     return html_content
 
 @app.post("/guardar-cliente")
-def guardar_cliente(nombre: str = Form(...), negocio: str = Form(...), telefono: str = Form(""), direccion: str = Form(""), giro: str = Form("")):
+def guardar_cliente(request: Request, nombre: str = Form(...), negocio: str = Form(...), telefono: str = Form(...), direccion: str = Form(""), giro: str = Form("")):
+    if "usuario" not in request.session:
+        return RedirectResponse(url="/login", status_code=303)
     registrar_cliente(nombre, negocio, telefono, direccion, giro)
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/guardar-seguimiento")
-def guardar_seguimiento(id_cliente: int = Form(...), asesor: str = Form(...), producto: str = Form(...), tipo: str = Form(...), detalles: str = Form(...), estatus: str = Form(...)):
+def guardar_seguimiento(request: Request, id_cliente: int = Form(...), asesor: str = Form(...), producto: str = Form(...), tipo: str = Form(...), detalles: str = Form(...), estatus: str = Form(...)):
+    if "usuario" not in request.session:
+        return RedirectResponse(url="/login", status_code=303)
     registrar_seguimiento(id_cliente, asesor, producto, tipo, detalles, estatus)
     return RedirectResponse(url="/", status_code=303)
 
-@app.get("/historial/{id_cliente}")
-def historial_cliente(id_cliente: int):
+@app.get("/historial/{{id_cliente}}")
+def historial_json(id_cliente: int, request: Request):
+    if "usuario" not in request.session:
+        return []
     historial = obtener_historial_cliente(id_cliente)
-    # Formateamos la respuesta para que JavaScript la lea fácil
-    return [{"fecha": h[0], "asesor": h[1], "producto": h[2], "tipo": h[3], "detalles": h[4], "estatus": h[5]} for h in historial]
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+    resultado = []
+    for h in historial:
+        resultado.append({
+            "fecha": h[0],
+            "asesor": h[1],
+            "producto": h[2],
+            "tipo": h[3],
+            "detalle": h[4],
+            "estatus": h[5]
+        })
+    return resultado
