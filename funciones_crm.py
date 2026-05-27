@@ -36,6 +36,7 @@ def inicializar_base_de_datos():
     conn = sqlite3.connect('castiel_crm.db')
     c = conn.cursor()
     
+    # 1. Tabla de clientes
     c.execute("""
     CREATE TABLE IF NOT EXISTS clientes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,6 +51,7 @@ def inicializar_base_de_datos():
     )
     """)
     
+    # 2. Tabla de seguimientos
     c.execute("""
     CREATE TABLE IF NOT EXISTS seguimientos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,6 +65,22 @@ def inicializar_base_de_datos():
         FOREIGN KEY (id_cliente) REFERENCES clientes (id)
     )
     """)
+    
+    # 3. NUEVA: Tabla de usuarios y roles
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS usuarios (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        usuario TEXT UNIQUE,
+        contrasena TEXT,
+        rol TEXT
+    )
+    """)
+    
+    # 4. Creamos un Administrador por defecto (solo si la tabla está vacía)
+    c.execute("SELECT COUNT(*) FROM usuarios")
+    if c.fetchone()[0] == 0:
+        # Usuario: admin | Contraseña: admin123 | Rol: administrador
+        c.execute("INSERT INTO usuarios (usuario, contrasena, rol) VALUES (?, ?, ?)", ('admin', 'admin123', 'administrador'))
     
     conn.commit()
     conn.close()
