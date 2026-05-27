@@ -115,16 +115,16 @@ async def login(request: Request, usuario: str = Form(...), contrasena: str = Fo
         username, rol, estado = user_record
         if estado == "Inactivo":
             return templates.TemplateResponse(
-    request=request, 
-    name="login.html", 
-    context={"error": "Tu cuenta ha sido bloqueada por el Administrador."}
-)
-        
+                request=request,
+                name="login.html",
+                context={"error": "Tu cuenta ha sido bloqueada por el Administrador."}
+            )
+
         request.session["usuario"] = username
         request.session["rol"] = rol
         return RedirectResponse(url="/panel", status_code=303)
-    
-   return templates.TemplateResponse(request=request, name="login.html", context={"error": None})
+
+    return templates.TemplateResponse(request=request, name="login.html", context={"error": None})
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
