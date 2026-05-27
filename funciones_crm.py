@@ -1,11 +1,12 @@
 import sqlite3  
 from datetime import datetime  
-def registrar_cliente(n, b, t, d, g):  
- conn = sqlite3.connect('castiel_crm.db')  
- c = conn.cursor()  
- c.execute("INSERT INTO clientes (nombre_cliente, nombre_negocio, telefono, direccion, giro_negocio) VALUES (?,?,?,?,?)", (n,b,t,d,g))  
- conn.commit()  
- conn.close()  
+def registrar_cliente(n, b, t, d, g):
+    conn = sqlite3.connect('castiel_crm.db')
+    c = conn.cursor()
+    # Mapeamos los 5 datos en orden: nombre_cliente, nombre_negocio, telefono, detalle (para dirección) y estado (para giro)
+    c.execute("INSERT INTO clientes (nombre_cliente, nombre_negocio, telefono, detalle, estado) VALUES (?, ?, ?, ?, ?)", (n, b, t, d, g))
+    conn.commit()
+    conn.close()
 def registrar_seguimiento(id_c, ase, prod, tip, det, est):  
  conn = sqlite3.connect('castiel_crm.db')  
  c = conn.cursor()  
