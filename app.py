@@ -101,7 +101,7 @@ def verificar_permiso(usuario: str, permiso_columna: str):
 async def login_page(request: Request):
     if request.session.get("usuario"):
         return RedirectResponse(url="/panel", status_code=303)
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    return templates.TemplateResponse(request=request, name="login.html", context={"error": None})
 
 @app.post("/login")
 async def login(request: Request, usuario: str = Form(...), contrasena: str = Form(...)):
@@ -114,14 +114,17 @@ async def login(request: Request, usuario: str = Form(...), contrasena: str = Fo
     if user_record:
         username, rol, estado = user_record
         if estado == "Inactivo":
-            return templates.TemplateResponse("login.html", {"request": request, "error": "Tu cuenta ha sido bloqueada por el Administrador."})
+            return templates.TemplateResponse(
+    request=request, 
+    name="login.html", 
+    context={"error": "Tu cuenta ha sido bloqueada por el Administrador."}
+)
         
         request.session["usuario"] = username
         request.session["rol"] = rol
         return RedirectResponse(url="/panel", status_code=303)
     
-    return templates.TemplateResponse("login.html", {"request": request, "error": "Usuario o contraseña incorrectos."})
-
+   return templates.TemplateResponse(request=request, name="login.html", context={"error": None})
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
@@ -149,14 +152,17 @@ async def panel_clientes(request: Request, usuario=Depends(obtener_usuario_actua
         for c in clientes
     ]
     
-    return templates.TemplateResponse("panel.html", {
-        "request": request, 
-        "clientes": lista_clientes, 
+   return templates.TemplateResponse(
+    request=request,
+    name="panel.html",
+    context={
+        "clientes": lista_clientes,
         "usuario": usuario,
         "rol": rol,
         "p_gestionar": p_gestionar,
         "p_comisiones": p_comisiones
-    })
+    }
+)
 
 # --- SECCIÓN DE COMISIONES ---
 
@@ -186,15 +192,18 @@ async def panel_comisiones(request: Request, usuario=Depends(obtener_usuario_act
         for c in comisiones_raw
     ]
     
-    return templates.TemplateResponse("comisiones.html", {
-        "request": request,
+    return templates.TemplateResponse(
+    request=request,
+    name="comisiones.html",
+    context={
         "comisiones": lista_comisiones,
         "clientes": clientes_list,
         "usuario": usuario,
         "rol": rol,
         "p_gestionar": p_gestionar,
         "p_comisiones": True
-    })
+    }
+)
 
 @app.post("/comisiones/agregar")
 async def agregar_comision(cliente_id: int = Form(...), monto: float = Form(...), concepto: str = Form(...), fecha: str = Form(...), usuario=Depends(obtener_usuario_actual)):
@@ -232,14 +241,16 @@ async def panel_usuarios(request: Request, usuario=Depends(obtener_usuario_actua
         for u in users_raw
     ]
     
-    return templates.TemplateResponse("usuarios.html", {
-        "request": request,
+   return templates.TemplateResponse(
+    request=request,
+    name="usuarios.html",
+    context={
         "usuarios": lista_usuarios,
         "usuario": usuario,
         "rol": "admin",
         "p_comisiones": True
-    })
-
+    }
+)
 @app.post("/usuarios/crear")
 async def crear_usuario(
     request: Request, 
