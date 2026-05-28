@@ -114,12 +114,10 @@
                         <form action="/editar-usuario" method="POST">
                             <input type="hidden" name="id_usuario" value="{{ u.id }}">
                             
-                            <div style="padding: 5px 0;">
-                                <td>
-                                    <input type="text" name="nombre_completo" class="table-input input-name" value="{{ u.nombre_completo }}" placeholder="Nombre Completo"><br>
-                                    <input type="text" name="puesto" class="table-input input-puesto" value="{{ u.puesto }}" placeholder="Puesto / Cargo">
-                                </td>
-                            </div>
+                            <td>
+                                <input type="text" name="nombre_completo" class="table-input input-name" value="{{ u.nombre_completo }}" placeholder="Nombre Completo"><br>
+                                <input type="text" name="puesto" class="table-input input-puesto" value="{{ u.puesto }}" placeholder="Puesto / Cargo" style="margin-top: 4px;">
+                            </td>
                             
                             <td>
                                 <input type="text" name="usuario_login" class="table-input" value="{{ u.usuario }}" style="width: 100px;">
