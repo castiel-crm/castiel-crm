@@ -10,31 +10,45 @@ app = FastAPI()
 # Configuración segura para manejo de sesiones
 app.add_middleware(SessionMiddleware, secret_key="super-secret-key-castiel-crm")
 
-# CONFIGURACIÓN DE RUTAS ABSOLUTAS (Limpia y sin duplicados)
+# CONFIGURACIÓN DE RUTAS ABSOLUTAS
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 templates_path = os.path.join(BASE_DIR, "templates")
 templates = Jinja2Templates(directory=templates_path)
 
 DB_PATH = os.path.join(BASE_DIR, "crm.db")
 
-# Función para inicializar la base de datos de manera limpia en producción
-def inicializar_base_de_datos():
+# =========================================================
+# 🔄 SISTEMA DE MIGRACIÓN Y CREACIÓN DE BASE DE DATOS UNIFICADA
+# =========================================================
+def inicializar_base_de_datos_unificada():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # 1. Crear tabla de usuarios
+    # 1. Crear tabla de usuarios con la estructura moderna compatible con las vistas HTML
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS usuarios (
-        usuario TEXT PRIMARY KEY,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        usuario TEXT UNIQUE NOT NULL,
         contrasena TEXT NOT NULL,
         nombre_completo TEXT NOT NULL,
         rol TEXT NOT NULL,
-        estado TEXT NOT NULL,
-        p_ver_clientes INTEGER DEFAULT 0,
-        p_gestionar_clientes INTEGER DEFAULT 0,
-        p_ver_comisiones INTEGER DEFAULT 0
+        puesto TEXT DEFAULT 'Asesor',
+        p_gestionar INTEGER DEFAULT 0,
+        p_comisiones INTEGER DEFAULT 0
     )
     """)
+    
+    # MIGRACIÓN EXPRESA: En caso de que la base vieja de Render use 'usuario' como PRIMARY KEY de texto,
+    # verificamos la existencia de las columnas nuevas para no romper datos guardados.
+    cursor.execute("PRAGMA table_info(usuarios)")
+    columnas_actuales = [col[1] for col in cursor.fetchall()]
+    
+    if "puesto" not in columnas_actuales:
+        cursor.execute("ALTER TABLE usuarios ADD COLUMN puesto TEXT DEFAULT 'Asesor'")
+    if "p_gestionar" not in columnas_actuales:
+        cursor.execute("ALTER TABLE usuarios ADD COLUMN p_gestionar INTEGER DEFAULT 0")
+    if "p_comisiones" not in columnas_actuales:
+        cursor.execute("ALTER TABLE usuarios ADD COLUMN p_comisiones INTEGER DEFAULT 0")
     
     # 2. Crear tabla de clientes
     cursor.execute("""
@@ -59,12 +73,12 @@ def inicializar_base_de_datos():
     )
     """)
     
-    # 4. Insertar un usuario administrador si la tabla está vacía
+    # 4. Insertar el administrador maestro si la tabla está vacía
     cursor.execute("SELECT COUNT(*) FROM usuarios")
     if cursor.fetchone()[0] == 0:
         cursor.execute("""
-        INSERT INTO usuarios (usuario, contrasena, nombre_completo, rol, estado, p_ver_clientes, p_gestionar_clientes, p_ver_comisiones)
-        VALUES ('admin', 'admin123', 'Administrador General', 'admin', 'Activo', 1, 1, 1)
+        INSERT INTO usuarios (usuario, contrasena, nombre_completo, rol, puesto, p_gestionar, p_comisiones)
+        VALUES ('admin', 'admin123', 'Eli Castillo', 'admin', 'Director Corporativo', 1, 1)
         """)
         
     conn.commit()
@@ -73,7 +87,7 @@ def inicializar_base_de_datos():
 # Evento controlado de inicio del servidor FastAPI
 @app.on_event("startup")
 async def startup_event():
-    inicializar_base_de_datos()
+    inicializar_base_de_datos_unificada()
 
 
 # --- CONTROL DE ACCESOS Y PERMISOS ---
@@ -88,12 +102,13 @@ def verificar_permiso(usuario: str, permiso_columna: str) -> bool:
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
+        # Adaptación para que consulte dinámicamente las nuevas columnas unificadas
         cursor.execute(f"SELECT {permiso_columna}, rol FROM usuarios WHERE usuario = ?", (usuario,))
         res = cursor.fetchone()
         conn.close()
         
         if res:
-            if res[1] == "admin":
+            if res[1].lower() == "admin":
                 return True
             return res[0] == 1
         return False
@@ -107,31 +122,21 @@ def verificar_permiso(usuario: str, permiso_columna: str) -> bool:
 async def login_page(request: Request):
     if request.session.get("usuario"):
         return RedirectResponse(url="/panel", status_code=303)
-    
-    # El orden correcto que exige Jinja2 en tu servidor:
-    return templates.TemplateResponse(
-        request, 
-        name="login.html", 
-        context={"error": None}
-    )
+    return templates.TemplateResponse(request, name="login.html", context={"error": None})
+
+
 @app.post("/login")
 async def login(request: Request, usuario: str = Form(...), contrasena: str = Form(...)):
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        cursor.execute("SELECT usuario, rol, estado FROM usuarios WHERE usuario = ? AND contrasena = ?", (usuario, contrasena))
+        # CORREGIDO: Eliminamos la columna 'estado' que provocaba el desplome en cascada
+        cursor.execute("SELECT usuario, rol FROM usuarios WHERE usuario = ? AND contrasena = ?", (usuario.strip(), contrasena))
         user_record = cursor.fetchone()
         conn.close()
 
         if user_record:
-            username, rol, estado = user_record
-            if estado == "Inactivo":
-                return templates.TemplateResponse(
-                    request=request,
-                    name="login.html",
-                    context={"error": "Tu cuenta ha sido bloqueada por el Administrador."}
-                )
-
+            username, rol = user_record
             request.session["usuario"] = username
             request.session["rol"] = rol
             return RedirectResponse(url="/panel", status_code=303)
@@ -145,11 +150,9 @@ async def login(request: Request, usuario: str = Form(...), contrasena: str = Fo
 
 @app.get("/panel", response_class=HTMLResponse)
 async def panel_clientes(request: Request, usuario=Depends(obtener_usuario_actual)):
-    if not verificar_permiso(usuario, "p_ver_clientes"):
-        return HTMLResponse(content="No tienes permisos para ver la lista de clientes.", status_code=403)
-
-    p_gestionar = verificar_permiso(usuario, "p_gestionar_clientes")
-    p_comisiones = verificar_permiso(usuario, "p_ver_comisiones")
+    # Comprobar si tiene acceso general al panel o si es Administrador
+    p_gestionar = verificar_permiso(usuario, "p_gestionar")
+    p_comisiones = verificar_permiso(usuario, "p_comisiones")
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -179,8 +182,8 @@ async def panel_clientes(request: Request, usuario=Depends(obtener_usuario_actua
 
 @app.get("/comisiones", response_class=HTMLResponse)
 async def ver_comisiones(request: Request, usuario=Depends(obtener_usuario_actual)):
-    if not verificar_permiso(usuario, "p_ver_comisiones"):
-        return HTMLResponse(content="No tienes permisos para ver comisiones.", status_code=403)
+    if not verificar_permiso(usuario, "p_comisiones"):
+        return HTMLResponse(content="No tienes privilegios para interactuar con el módulo de comisiones.", status_code=403)
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -205,57 +208,6 @@ async def ver_comisiones(request: Request, usuario=Depends(obtener_usuario_actua
 
 
 # =========================================================
-# 🔄 SISTEMA DE MIGRACIÓN AUTOMÁTICA DE BASE DE DATOS
-# =========================================================
-
-def inicializar_base_datos():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    # Crear la tabla si es una instalación totalmente limpia
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS usuarios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            usuario TEXT UNIQUE,
-            contrasena TEXT,
-            rol TEXT,
-            p_gestionar INTEGER DEFAULT 0,
-            p_comisiones INTEGER DEFAULT 0,
-            nombre_completo TEXT DEFAULT '',
-            puesto TEXT DEFAULT 'Asesor'
-        )
-    """)
-    
-    # 🔎 Verificar dinámicamente qué columnas existen en el servidor de Render
-    cursor.execute("PRAGMA table_info(usuarios)")
-    columnas_actuales = [col[1] for col in cursor.fetchall()]
-    
-    # Agregar las columnas si faltan en la base de datos de producción
-    if "nombre_completo" not in columnas_actuales:
-        cursor.execute("ALTER TABLE usuarios ADD COLUMN nombre_completo TEXT DEFAULT ''")
-    if "puesto" not in columnas_actuales:
-        cursor.execute("ALTER TABLE usuarios ADD COLUMN puesto TEXT DEFAULT 'Asesor'")
-    if "p_gestionar" not in columnas_actuales:
-        cursor.execute("ALTER TABLE usuarios ADD COLUMN p_gestionar INTEGER DEFAULT 0")
-    if "p_comisiones" not in columnas_actuales:
-        cursor.execute("ALTER TABLE usuarios ADD COLUMN p_comisiones INTEGER DEFAULT 0")
-        
-    # Insertar el administrador maestro únicamente si la tabla está completamente vacía
-    cursor.execute("SELECT COUNT(*) FROM usuarios")
-    if cursor.fetchone()[0] == 0:
-        cursor.execute("""
-            INSERT INTO usuarios (usuario, contrasena, rol, p_gestionar, p_comisiones, nombre_completo, puesto)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, ("admin", "admin123", "admin", 1, 1, "Eli Castillo", "Director Corporativo"))
-        
-    conn.commit()
-    conn.close()
-
-# Ejecutar migración de forma automática en cada reinicio del contenedor
-inicializar_base_datos()
-
-
-# =========================================================
 # 👤 CONTROL DE ACCESOS Y MENÚ DE USUARIOS
 # =========================================================
 
@@ -268,14 +220,12 @@ async def usuarios_page(request: Request):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Forzar la verificación de privilegios de administrador
     cursor.execute("SELECT rol FROM usuarios WHERE usuario = ?", (usuario_sesion,))
     user_data = cursor.fetchone()
     if not user_data or user_data[0].lower() != "admin":
         conn.close()
         return HTMLResponse(content="Acceso denegado: Privilegios insuficientes.", status_code=403)
     
-    # Consulta optimizada que incluye los nuevos campos requeridos por el template
     cursor.execute("SELECT id, usuario, contrasena, rol, nombre_completo, puesto, p_gestionar, p_comisiones FROM usuarios")
     filas = cursor.fetchall()
     
@@ -309,7 +259,6 @@ async def crear_usuario(
     p_gestionar: str = Form(None),
     p_comisiones: str = Form(None)
 ):
-    # Convertir las casillas de verificación (Checkboxes) HTML a valores binarios (0 o 1)
     valor_gestionar = 1 if p_gestionar else 0
     valor_comisiones = 1 if p_comisiones else 0
 
@@ -322,7 +271,7 @@ async def crear_usuario(
         """, (nuevo_usuario.strip(), contrasena, "asesor", nombre_completo.strip(), puesto.strip(), valor_gestionar, valor_comisiones))
         conn.commit()
     except sqlite3.IntegrityError:
-        pass  # Manejo silencioso en caso de intentar registrar un identificador ya existente
+        pass
     finally:
         conn.close()
     return RedirectResponse(url="/usuarios", status_code=303)
@@ -351,14 +300,14 @@ async def editar_usuario(
         """, (usuario_login.strip(), nueva_contrasena, nombre_completo.strip(), puesto.strip(), valor_gestionar, valor_comisiones, id_usuario))
         conn.commit()
     except Exception as e:
-        print(f"Error detectado durante la edición en lote: {e}")
+        print(f"Error detectado durante la edición: {e}")
     finally:
         conn.close()
     return RedirectResponse(url="/usuarios", status_code=303)
 
 
 # =========================================================
-# 🚪 CIERRE Y EXPULSIÓN DE SESIONES
+# 🚪 CIERRE DE SESIONES
 # =========================================================
 
 @app.get("/logout")
