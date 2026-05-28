@@ -130,6 +130,7 @@ async def logout(request: Request):
     request.session.clear()
     return RedirectResponse(url="/", status_code=303)
 
+
 # --- VISTAS DEL PANEL ---
 
 @app.get("/panel", response_class=HTMLResponse)
@@ -162,99 +163,80 @@ async def panel_clientes(request: Request, usuario=Depends(obtener_usuario_actua
             "p_comisiones": p_comisiones
         }
     )
+
+
 # --- SECCIÓN DE COMISIONES ---
 
 @app.get("/comisiones", response_class=HTMLResponse)
-async def panel_comisiones(request: Request, usuario=Depends(obtener_usuario_actual)):
+async def ver_comisiones(request: Request, usuario=Depends(obtener_usuario_actual)):
     if not verificar_permiso(usuario, "p_ver_comisiones"):
-        return RedirectResponse(url="/panel", status_code=303)
-        
-    rol = request.session.get("rol", "asesor")
-    p_gestionar = verificar_permiso(usuario, "p_gestionar_clientes")
-    
+        return HTMLResponse(content="No tienes permisos para ver comisiones.", status_code=403)
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute('''
-        SELECT comisiones.id, clientes.cliente, comisiones.monto, comisiones.concepto, comisiones.fecha, comisiones.estado_pago 
-        FROM comisiones 
-        LEFT JOIN clientes ON comisiones.cliente_id = clientes.id
-    ''')
-    comisiones_raw = cursor.fetchall()
-    
-    cursor.execute("SELECT id, cliente FROM clientes")
-    clientes_list = [{"id": c[0], "name": c[1]} for c in cursor.fetchall()]
+    cursor.execute("SELECT id, asesor, monto, fecha, descripcion FROM comisiones")
+    comisiones = cursor.fetchall()
     conn.close()
-    
+
     lista_comisiones = [
-        {"id": c[0], "cliente": c[1], "monto": c[2], "concepto": c[3], "fecha": c[4], "estado_pago": c[5]}
-        for c in comisiones_raw
+        {"id": c[0], "asesor": c[1], "monto": c[2], "fecha": c[3], "descripcion": c[4]}
+        for c in comisiones
     ]
-    
+
     return templates.TemplateResponse(
-    request=request,
-    name="comisiones.html",
-    context={
-        "comisiones": lista_comisiones,
-        "clientes": clientes_list,
-        "usuario": usuario,
-        "rol": rol,
-        "p_gestionar": p_gestionar,
-        "p_comisiones": True
-    }
-)
-
-@app.post("/comisiones/agregar")
-async def agregar_comision(cliente_id: int = Form(...), monto: float = Form(...), concepto: str = Form(...), fecha: str = Form(...), usuario=Depends(obtener_usuario_actual)):
-    if not verificar_permiso(usuario, "p_gestionar_clientes"):
-        return RedirectResponse(url="/comisiones", status_code=303)
-        
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO comisiones (cliente_id, monto, concepto, fecha, estado_pago) VALUES (?, ?, ?, ?, 'Pendiente')",
-        (cliente_id, monto, concepto, fecha)
+        request=request,
+        name="comisiones.html",
+        context={
+            "comisiones": lista_comisiones,
+            "usuario": usuario,
+            "rol": request.session.get("rol")
+        }
     )
-    conn.commit()
-    conn.close()
-    return RedirectResponse(url="/comisiones", status_code=303)
 
-# --- GESTIÓN DE USUARIOS Y PERMISOS (SOLO ADMINISTRADOR) ---
+
+# --- SECCIÓN DE USUARIOS (ADMIN) ---
 
 @app.get("/usuarios", response_class=HTMLResponse)
-async def panel_usuarios(request: Request, usuario=Depends(obtener_usuario_actual)):
+async def listar_usuarios(request: Request, usuario=Depends(obtener_usuario_actual)):
     if request.session.get("rol") != "admin":
         return RedirectResponse(url="/panel", status_code=303)
-        
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT id, usuario, nombre_completo, rol, estado, p_ver_clientes, p_gestionar_clientes, p_ver_comisiones FROM usuarios")
-    users_raw = cursor.fetchall()
+    cursor.execute("SELECT usuario, nombre_complepleto, rol, estado, p_ver_clientes, p_gestionar_clientes, p_ver_comisiones FROM usuarios")
+    usuarios = cursor.fetchall()
     conn.close()
-    
+
     lista_usuarios = [
         {
-            "id": u[0], "usuario": u[1], "nombre_completo": u[2], "rol": u[3], "estado": u[4],
-            "p_ver_clientes": u[5], "p_gestionar_clientes": u[6], "p_ver_comisiones": u[7]
+            "usuario": u[0],
+            "nombre_completo": u[1],
+            "rol": u[2],
+            "estado": u[3],
+            "p_ver_clientes": u[4],
+            "p_gestionar_clientes": u[5],
+            "p_ver_comisiones": u[6]
         }
-        for u in users_raw
+        for u in usuarios
     ]
-    
-   return templates.TemplateResponse(
-    request=request,
-    name="usuarios.html",
-    context={
-        "usuarios": lista_usuarios,
-        "usuario": usuario,
-        "rol": "admin",
-        "p_comisiones": True
-    }
-)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="usuarios.html",
+        context={
+            "usuarios": lista_usuarios,
+            "usuario": usuario,
+            "rol": request.session.get("rol")
+        }
+    )
+
+
 @app.post("/usuarios/crear")
 async def crear_usuario(
-    request: Request, 
-    usuario: str = Form(...), 
-    contrasena: str = Form(...), 
-    nombre_completo: str = Form(...), 
+    request: Request,
+    usuario: str = Form(...),
+    contrasena: str = Form(...),
+    nombre_completo: str = Form(...),
     p_ver_c: int = Form(0),
     p_gest_c: int = Form(0),
     p_ver_com: int = Form(0),
@@ -262,13 +244,13 @@ async def crear_usuario(
 ):
     if request.session.get("rol") != "admin":
         return RedirectResponse(url="/panel", status_code=303)
-        
+
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute(
-            '''INSERT INTO usuarios (usuario, contrasena, nombre_completo, rol, estado, p_ver_clientes, p_gestionar_clientes, p_ver_comisiones) 
-               VALUES (?, ?, ?, 'asesor', 'Activo', ?, ?, ?)''',
+            """INSERT INTO usuarios (usuario, contrasena, nombre_complepleto, rol, estado, p_ver_clientes, p_gestionar_clientes, p_ver_comisiones)
+               VALUES (?, ?, ?, 'asesor', 'Activo', ?, ?, ?)""",
             (usuario, contrasena, nombre_completo, p_ver_c, p_gest_c, p_ver_com)
         )
         conn.commit()
@@ -276,13 +258,14 @@ async def crear_usuario(
         pass
     finally:
         conn.close()
-        
+
     return RedirectResponse(url="/usuarios", status_code=303)
+
 
 @app.post("/usuarios/actualizar-permisos/{user_id}")
 async def actualizar_permisos(
-    user_id: int,
     request: Request,
+    user_id: str,
     p_ver_c: int = Form(0),
     p_gest_c: int = Form(0),
     p_ver_com: int = Form(0),
@@ -290,82 +273,35 @@ async def actualizar_permisos(
 ):
     if request.session.get("rol") != "admin":
         return RedirectResponse(url="/panel", status_code=303)
-        
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE usuarios SET p_ver_clientes = ?, p_gestionar_clientes = ?, p_ver_comisiones = ? WHERE id = ?", 
-                   (p_ver_c, p_gest_c, p_ver_com, user_id))
-    conn.commit()
-    conn.close()
-    return RedirectResponse(url="/usuarios", status_code=303)
 
-@app.post("/usuarios/cambiar-estado/{user_id}")
-async def cambiar_estado_usuario(user_id: int, request: Request, usuario_act=Depends(obtener_usuario_actual)):
-    if request.session.get("rol") != "admin":
-        return RedirectResponse(url="/panel", status_code=303)
-        
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT usuario, estado FROM usuarios WHERE id = ?", (user_id,))
-    user = cursor.fetchone()
-    
-    if user and user[0] != "admin":
-        nuevo_estado = "Inactivo" if user[1] == "Activo" else "Activo"
-        cursor.execute("UPDATE usuarios SET estado = ? WHERE id = ?", (nuevo_estado, user_id))
-        conn.commit()
-            
-    conn.close()
-    return RedirectResponse(url="/usuarios", status_code=303)
-
-@app.post("/usuarios/eliminar/{user_id}")
-async def eliminar_usuario(user_id: int, request: Request, usuario_act=Depends(obtener_usuario_actual)):
-    if request.session.get("rol") != "admin":
-        return RedirectResponse(url="/panel", status_code=303)
-        
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT usuario FROM usuarios WHERE id = ?", (user_id,))
-    user = cursor.fetchone()
-    
-    if user and user[0] != "admin":
-        cursor.execute("DELETE FROM usuarios WHERE id = ?", (user_id,))
-        conn.commit()
-        
-    conn.close()
-    return RedirectResponse(url="/usuarios", status_code=303)
-
-# --- ACCIONES DE CLIENTES ---
-
-@app.post("/clientes/agregar")
-async def agregar_cliente(
-    cliente: str = Form(...), negocio: str = Form(""), telefono: str = Form(""),
-    direccion: str = Form(""), giro: str = Form(""), usuario=Depends(obtener_usuario_actual)
-):
-    if not verificar_permiso(usuario, "p_gestionar_clientes"):
-        return RedirectResponse(url="/panel", status_code=303)
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO clientes (cliente, negocio, telefono, direccion, giro) VALUES (?, ?, ?, ?, ?)",
-        (cliente, negocio, telefono, direccion, giro)
+        """UPDATE usuarios 
+           SET p_ver_clientes = ?, p_gestionar_clientes = ?, p_ver_comisiones = ? 
+           WHERE usuario = ?""",
+        (p_ver_c, p_gest_c, p_ver_com, user_id)
     )
     conn.commit()
     conn.close()
-    return RedirectResponse(url="/panel", status_code=303)
 
-@app.post("/clientes/eliminar/{cliente_id}")
-async def eliminar_cliente(cliente_id: int, usuario=Depends(obtener_usuario_actual)):
-    if not verificar_permiso(usuario, "p_gestionar_clientes"):
+    return RedirectResponse(url="/usuarios", status_code=303)
+
+
+@app.post("/usuarios/cambiar-estado/{user_id}")
+async def cambiar_estado(
+    request: Request,
+    user_id: str,
+    nuevo_estado: str = Form(...),
+    usuario_act=Depends(obtener_usuario_actual)
+):
+    if request.session.get("rol") != "admin":
         return RedirectResponse(url="/panel", status_code=303)
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM clientes WHERE id = ?", (cliente_id,))
+    cursor.execute("UPDATE usuarios SET estado = ? WHERE usuario = ?", (nuevo_estado, user_id))
     conn.commit()
     conn.close()
-    return RedirectResponse(url="/panel", status_code=303)
 
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    if exc.status_code == 303:
-        return RedirectResponse(url="/")
-    return HTMLResponse(content=exc.detail, status_code=exc.status_code)
+    return RedirectResponse(url="/usuarios", status_code=303)
