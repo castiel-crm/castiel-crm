@@ -136,34 +136,32 @@ async def logout(request: Request):
 async def panel_clientes(request: Request, usuario=Depends(obtener_usuario_actual)):
     if not verificar_permiso(usuario, "p_ver_clientes"):
         return HTMLResponse(content="No tienes permisos para ver la lista de clientes.", status_code=403)
-        
+
     p_gestionar = verificar_permiso(usuario, "p_gestionar_clientes")
     p_comisiones = verificar_permiso(usuario, "p_ver_comisiones")
-    rol = request.session.get("rol", "asesor")
-    
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT id, cliente, negocio, telefono, direccion, giro FROM clientes")
     clientes = cursor.fetchall()
     conn.close()
-    
+
     lista_clientes = [
         {"id": c[0], "cliente": c[1], "negocio": c[2], "telefono": c[3], "direccion": c[4], "giro": c[5]}
         for c in clientes
     ]
-    
-   return templates.TemplateResponse(
-    request=request,
-    name="panel.html",
-    context={
-        "clientes": lista_clientes,
-        "usuario": usuario,
-        "rol": rol,
-        "p_gestionar": p_gestionar,
-        "p_comisiones": p_comisiones
-    }
-)
 
+    return templates.TemplateResponse(
+        request=request,
+        name="panel.html",
+        context={
+            "clientes": lista_clientes,
+            "usuario": usuario,
+            "rol": request.session.get("rol"),
+            "p_gestionar": p_gestionar,
+            "p_comisiones": p_comisiones
+        }
+    )
 # --- SECCIÓN DE COMISIONES ---
 
 @app.get("/comisiones", response_class=HTMLResponse)
