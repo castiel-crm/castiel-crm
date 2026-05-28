@@ -264,13 +264,14 @@ async def usuarios_page(request: Request):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Validar rol
+    # Validar rol administrativo
     cursor.execute("SELECT rol FROM usuarios WHERE usuario = ?", (usuario_sesion,))
     user_data = cursor.fetchone()
     if not user_data or user_data[0].lower() != "admin":
         conn.close()
-        return HTMLResponse(content="Acceso denegado.", status_code=403)
+        return HTMLResponse(content="Acceso denegado: Solo el administrador puede ver esta sección.", status_code=403)
     
+    # Obtener la lista limpia de usuarios con las columnas correctas
     cursor.execute("SELECT id, usuario, contrasena, rol, nombre_completo, puesto, p_gestionar, p_comisiones FROM usuarios")
     filas = cursor.fetchall()
     
@@ -323,7 +324,7 @@ async def crear_usuario(
     return RedirectResponse(url="/usuarios", status_code=303)
 
 
-# --- NUEVA ACCIÓN: EDITAR / RENOMBRAR / CAMBIAR CONTRASEÑA DE CUALQUIER EMPLEADO ---
+# --- ACCIÓN PARA EDITAR / CAMBIAR CONTRASEÑA O DATOS DE USUARIO ---
 @app.post("/editar-usuario")
 async def editar_usuario(
     id_usuario: int = Form(...),
