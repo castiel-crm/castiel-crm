@@ -205,14 +205,14 @@ async def ver_comisiones(request: Request, usuario=Depends(obtener_usuario_actua
 
 
 # =========================================================
-# 🔄 MIGRACIÓN Y ASIGNACIÓN DE PUESTOS PERSONALIZADOS
+# 🔄 SISTEMA DE MIGRACIÓN AUTOMÁTICA DE BASE DE DATOS
 # =========================================================
 
 def inicializar_base_datos():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Crear tabla base si no existe
+    # Crear la tabla si es una instalación totalmente limpia
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS usuarios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -226,20 +226,21 @@ def inicializar_base_datos():
         )
     """)
     
-    # 🔎 MIGRACIÓN EN VIVO: Verificar si faltan columnas en la base de Render
+    # 🔎 Verificar dinámicamente qué columnas existen en el servidor de Render
     cursor.execute("PRAGMA table_info(usuarios)")
     columnas_actuales = [col[1] for col in cursor.fetchall()]
     
+    # Agregar las columnas si faltan en la base de datos de producción
     if "nombre_completo" not in columnas_actuales:
         cursor.execute("ALTER TABLE usuarios ADD COLUMN nombre_completo TEXT DEFAULT ''")
     if "puesto" not in columnas_actuales:
         cursor.execute("ALTER TABLE usuarios ADD COLUMN puesto TEXT DEFAULT 'Asesor'")
-    if "p_gestionar" not in columnas_actuales and "p_gestionar_clientes" in columnas_actuales:
+    if "p_gestionar" not in columnas_actuales:
         cursor.execute("ALTER TABLE usuarios ADD COLUMN p_gestionar INTEGER DEFAULT 0")
-    if "p_comisiones" not in columnas_actuales and "p_ver_comisiones" in columnas_actuales:
+    if "p_comisiones" not in columnas_actuales:
         cursor.execute("ALTER TABLE usuarios ADD COLUMN p_comisiones INTEGER DEFAULT 0")
-
-    # Insertar administrador inicial si la tabla está completamente vacía
+        
+    # Insertar el administrador maestro únicamente si la tabla está completamente vacía
     cursor.execute("SELECT COUNT(*) FROM usuarios")
     if cursor.fetchone()[0] == 0:
         cursor.execute("""
@@ -250,11 +251,14 @@ def inicializar_base_datos():
     conn.commit()
     conn.close()
 
-# Ejecutamos la inicialización al arrancar
+# Ejecutar migración de forma automática en cada reinicio del contenedor
 inicializar_base_datos()
 
 
-# --- VISTA PRINCIPAL DE USUARIOS Y PERMISOS ---
+# =========================================================
+# 👤 CONTROL DE ACCESOS Y MENÚ DE USUARIOS
+# =========================================================
+
 @app.get("/usuarios", response_class=HTMLResponse)
 async def usuarios_page(request: Request):
     usuario_sesion = request.session.get("usuario")
@@ -264,14 +268,14 @@ async def usuarios_page(request: Request):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Validar rol administrativo
+    # Forzar la verificación de privilegios de administrador
     cursor.execute("SELECT rol FROM usuarios WHERE usuario = ?", (usuario_sesion,))
     user_data = cursor.fetchone()
     if not user_data or user_data[0].lower() != "admin":
         conn.close()
-        return HTMLResponse(content="Acceso denegado: Solo el administrador puede ver esta sección.", status_code=403)
+        return HTMLResponse(content="Acceso denegado: Privilegios insuficientes.", status_code=403)
     
-    # Obtener la lista limpia de usuarios con las columnas correctas
+    # Consulta optimizada que incluye los nuevos campos requeridos por el template
     cursor.execute("SELECT id, usuario, contrasena, rol, nombre_completo, puesto, p_gestionar, p_comisiones FROM usuarios")
     filas = cursor.fetchall()
     
@@ -296,7 +300,6 @@ async def usuarios_page(request: Request):
     )
 
 
-# --- ACCIÓN PARA CREAR NUEVO USUARIO/EMPLEADO ---
 @app.post("/crear-usuario")
 async def crear_usuario(
     nuevo_usuario: str = Form(...),
@@ -306,6 +309,7 @@ async def crear_usuario(
     p_gestionar: str = Form(None),
     p_comisiones: str = Form(None)
 ):
+    # Convertir las casillas de verificación (Checkboxes) HTML a valores binarios (0 o 1)
     valor_gestionar = 1 if p_gestionar else 0
     valor_comisiones = 1 if p_comisiones else 0
 
@@ -318,13 +322,12 @@ async def crear_usuario(
         """, (nuevo_usuario.strip(), contrasena, "asesor", nombre_completo.strip(), puesto.strip(), valor_gestionar, valor_comisiones))
         conn.commit()
     except sqlite3.IntegrityError:
-        pass
+        pass  # Manejo silencioso en caso de intentar registrar un identificador ya existente
     finally:
         conn.close()
     return RedirectResponse(url="/usuarios", status_code=303)
 
 
-# --- ACCIÓN PARA EDITAR / CAMBIAR CONTRASEÑA O DATOS DE USUARIO ---
 @app.post("/editar-usuario")
 async def editar_usuario(
     id_usuario: int = Form(...),
@@ -348,13 +351,16 @@ async def editar_usuario(
         """, (usuario_login.strip(), nueva_contrasena, nombre_completo.strip(), puesto.strip(), valor_gestionar, valor_comisiones, id_usuario))
         conn.commit()
     except Exception as e:
-        print(f"Error al editar: {e}")
+        print(f"Error detectado durante la edición en lote: {e}")
     finally:
         conn.close()
     return RedirectResponse(url="/usuarios", status_code=303)
 
 
-# --- RUTA PARA CERRAR SESIÓN ---
+# =========================================================
+# 🚪 CIERRE Y EXPULSIÓN DE SESIONES
+# =========================================================
+
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
