@@ -13,6 +13,8 @@ app.add_middleware(SessionMiddleware, secret_key="super-secret-key-castiel-crm")
 # CONFIGURACIÓN DE RUTAS ABSOLUTAS (Crucial para Render)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 templates_path = os.path.join(BASE_DIR, "templates")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+templates_path = os.path.join(BASE_DIR, "templates")
 templates = Jinja2Templates(directory=templates_path)
 
 DB_PATH = os.path.join(BASE_DIR, "crm.db")
@@ -88,7 +90,6 @@ def verificar_permiso(usuario: str, permiso_columna: str) -> bool:
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        # Consulta completamente limpia de comillas dañadas
         cursor.execute(f"SELECT {permiso_columna}, rol FROM usuarios WHERE usuario = ?", (usuario,))
         res = cursor.fetchone()
         conn.close()
