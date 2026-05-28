@@ -3,18 +3,16 @@ import sqlite3
 from fastapi import FastAPI, Request, Form, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 app = FastAPI()
-@app.on_event("startup")
-def iniciar_sistema():
-    inicializar_base_de_datos()
 
 # Configuración de cookies seguras para la sesión
 app.add_middleware(SessionMiddleware, secret_key="super-secret-key-castiel-crm")
 
-templates = Jinja2Templates(directory="templates")
+# Configuración robusta para encontrar la carpeta templates en entornos Linux/Render
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 DB_PATH = "crm.db"
 
@@ -71,8 +69,11 @@ def inicializar_base_de_datos():
     conn.commit()
     conn.close()
 
-# Ejecutamos la inicialización al encender el servidor
-inicializar_base_de_datos()
+# Evento ordenado de inicio del servidor
+@app.on_event("startup")
+async def startup_event():
+    inicializar_base_de_datos()
+
 
 # --- CONTROL DE ACCESOS Y PERMISOS ---
 
@@ -94,6 +95,8 @@ def verificar_permiso(usuario: str, permiso_columna: str) -> bool:
             return True
         return res[0] == 1
     return False
+
+
 # --- RUTAS DE AUTENTICACIÓN ---
 
 @app.get("/", response_class=HTMLResponse)
@@ -124,6 +127,7 @@ async def login(request: Request, usuario: str = Form(...), contrasena: str = Fo
         return RedirectResponse(url="/panel", status_code=303)
 
     return templates.TemplateResponse(request=request, name="login.html", context={"error": "Usuario o contraseña incorrectos"})
+
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
