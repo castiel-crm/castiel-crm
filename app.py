@@ -248,7 +248,7 @@ async def usuarios_page(request: Request):
         context={"usuarios": lista_usuarios, "usuario_actual": usuario_sesion}
     )
 
-# --- ACCIÓN PARA CREAR ASESOR DESDE EL FORMULARIO ---
+# --- ACCIÓN PARA CREAR ASESOR DESDE EL FORMULARIO (VERSIÓN INTELIGENTE) ---
 @app.post("/crear-usuario")
 async def crear_usuario(
     request: Request,
@@ -263,15 +263,26 @@ async def crear_usuario(
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+    
     try:
-        # Se guarda el asesor con sus casillas de verificación
-        cursor.execute(
-            "INSERT INTO usuarios (usuario, contrasena, rol, p_gestionar, p_comisiones) VALUES (?, ?, ?, ?, ?)",
-            (nuevo_usuario.strip(), contrasena, "asesor", p_gestionar, p_comisiones)
-        )
+        # Investigamos qué columnas existen en tu base de datos real
+        cursor.execute("PRAGMA table_info(usuarios)")
+        columnas_reales = [col[1] for col in cursor.fetchall()]
+        
+        # Mapeo inteligente: detectamos si usa nombres nuevos o viejos
+        col_gestionar = "p_gestionar" if "p_gestionar" in columnas_reales else "p_gestionar_clientes"
+        col_comisiones = "p_comisiones" if "p_comisiones" in columnas_reales else "p_ver_comisiones"
+        
+        # Construimos la consulta SQL de forma dinámica usando las columnas válidas
+        query = f"""
+            INSERT INTO usuarios (usuario, contrasena, rol, {col_gestionar}, {col_comisiones}) 
+            VALUES (?, ?, ?, ?, ?)
+        """
+        
+        cursor.execute(query, (nuevo_usuario.strip(), contrasena, "asesor", p_gestionar, p_comisiones))
         conn.commit()
     except sqlite3.IntegrityError:
-        # Si pones un nombre de usuario repetido, el sistema simplemente ignora el duplicado
+        # Ignora si el usuario ya está repetido
         pass
     finally:
         conn.close()
