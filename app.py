@@ -7,16 +7,17 @@ from starlette.middleware.sessions import SessionMiddleware
 
 app = FastAPI()
 
-# Configuración de cookies seguras para la sesión
+# Configuración segura para manejo de sesiones
 app.add_middleware(SessionMiddleware, secret_key="super-secret-key-castiel-crm")
 
-# Configuración robusta para encontrar la carpeta templates en entornos Linux/Render
+# CONFIGURACIÓN DE RUTAS ABSOLUTAS (Crucial para Render)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
+templates_path = os.path.join(BASE_DIR, "templates")
+templates = Jinja2Templates(directory=templates_path)
 
-DB_PATH = "crm.db"
+DB_PATH = os.path.join(BASE_DIR, "crm.db")
 
-# Función para inicializar la base de datos automáticamente si no existe o le faltan tablas
+# Función para inicializar la base de datos de manera limpia en producción
 def inicializar_base_de_datos():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -58,7 +59,7 @@ def inicializar_base_de_datos():
     )
     """)
     
-    # 4. Insertar un usuario administrador por defecto si la tabla está vacía
+    # 4. Insertar un usuario administrador si la tabla está vacía
     cursor.execute("SELECT COUNT(*) FROM usuarios")
     if cursor.fetchone()[0] == 0:
         cursor.execute("""
@@ -69,7 +70,7 @@ def inicializar_base_de_datos():
     conn.commit()
     conn.close()
 
-# Evento ordenado de inicio del servidor
+# Evento controlado de inicio del servidor FastAPI
 @app.on_event("startup")
 async def startup_event():
     inicializar_base_de_datos()
@@ -84,17 +85,21 @@ async def obtener_usuario_actual(request: Request):
     return usuario
 
 def verificar_permiso(usuario: str, permiso_columna: str) -> bool:
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(f"SELECT {permiso_columna}, rol FROM usuarios WHERE usuario = ?", (usuario,))
-    res = cursor.fetchone()
-    conn.close()
-    
-    if res:
-        if res[1] == "admin":
-            return True
-        return res[0] == 1
-    return False
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        # Consulta completamente limpia de comillas dañadas
+        cursor.execute(f"SELECT {permiso_columna}, rol FROM usuarios WHERE usuario = ?", (usuario,))
+        res = cursor.fetchone()
+        conn.close()
+        
+        if res:
+            if res[1] == "admin":
+                return True
+            return res[0] == 1
+        return False
+    except Exception:
+        return False
 
 
 # --- RUTAS DE AUTENTICACIÓN ---
@@ -107,31 +112,29 @@ async def login_page(request: Request):
 
 @app.post("/login")
 async def login(request: Request, usuario: str = Form(...), contrasena: str = Form(...)):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT usuario, rol, estado FROM usuarios WHERE usuario = ? AND contrasena = ?", (usuario, contrasena))
-    user_record = cursor.fetchone()
-    conn.close()
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT usuario, rol, estado FROM usuarios WHERE usuario = ? AND contrasena = ?", (usuario, contrasena))
+        user_record = cursor.fetchone()
+        conn.close()
 
-    if user_record:
-        username, rol, estado = user_record
-        if estado == "Inactivo":
-            return templates.TemplateResponse(
-                request=request,
-                name="login.html",
-                context={"error": "Tu cuenta ha sido bloqueada por el Administrador."}
-            )
+        if user_record:
+            username, rol, estado = user_record
+            if estado == "Inactivo":
+                return templates.TemplateResponse(
+                    request=request,
+                    name="login.html",
+                    context={"error": "Tu cuenta ha sido bloqueada por el Administrador."}
+                )
 
-        request.session["usuario"] = username
-        request.session["rol"] = rol
-        return RedirectResponse(url="/panel", status_code=303)
+            request.session["usuario"] = username
+            request.session["rol"] = rol
+            return RedirectResponse(url="/panel", status_code=303)
 
-    return templates.TemplateResponse(request=request, name="login.html", context={"error": "Usuario o contraseña incorrectos"})
-
-@app.get("/logout")
-async def logout(request: Request):
-    request.session.clear()
-    return RedirectResponse(url="/", status_code=303)
+        return templates.TemplateResponse(request=request, name="login.html", context={"error": "Usuario o contraseña incorrectos"})
+    except Exception as e:
+        return HTMLResponse(content=f"Error en el Servidor (Login): {str(e)}", status_code=500)
 
 
 # --- VISTAS DEL PANEL ---
