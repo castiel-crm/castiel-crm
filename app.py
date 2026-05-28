@@ -108,10 +108,11 @@ async def login_page(request: Request):
     if request.session.get("usuario"):
         return RedirectResponse(url="/panel", status_code=303)
     
-    # Al pasar request de forma directa en el contexto, Jinja2 no fallará
+    # Formato correcto exigido por la nueva versión: request va de primero
     return templates.TemplateResponse(
+        request, 
         name="login.html", 
-        context={"request": request, "error": None}
+        context={"error": None}
     )
 @app.post("/login")
 async def login(request: Request, usuario: str = Form(...), contrasena: str = Form(...)):
