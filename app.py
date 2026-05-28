@@ -18,13 +18,13 @@ templates = Jinja2Templates(directory=templates_path)
 DB_PATH = os.path.join(BASE_DIR, "crm.db")
 
 # =========================================================
-# 🔄 SISTEMA DE MIGRACIÓN Y CREACIÓN DE BASE DE DATOS UNIFICADA
+# 🔄 SISTEMA DE MIGRACIÓN Y CREACIÓN DE BASE DE DATOS
 # =========================================================
 def inicializar_base_de_datos_unificada():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # 1. Crear tabla de usuarios con la estructura moderna compatible con las vistas HTML
+    # Crear tabla de usuarios compatible con la interfaz gráfica
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS usuarios (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,8 +38,7 @@ def inicializar_base_de_datos_unificada():
     )
     """)
     
-    # MIGRACIÓN EXPRESA: En caso de que la base vieja de Render use 'usuario' como PRIMARY KEY de texto,
-    # verificamos la existencia de las columnas nuevas para no romper datos guardados.
+    # Verificar dinámicamente columnas existentes
     cursor.execute("PRAGMA table_info(usuarios)")
     columnas_actuales = [col[1] for col in cursor.fetchall()]
     
@@ -50,7 +49,7 @@ def inicializar_base_de_datos_unificada():
     if "p_comisiones" not in columnas_actuales:
         cursor.execute("ALTER TABLE usuarios ADD COLUMN p_comisiones INTEGER DEFAULT 0")
     
-    # 2. Crear tabla de clientes
+    # Crear tabla de clientes
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS clientes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,7 +61,7 @@ def inicializar_base_de_datos_unificada():
     )
     """)
     
-    # 3. Crear tabla de comisiones
+    # Crear tabla de comisiones
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS comisiones (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,7 +72,7 @@ def inicializar_base_de_datos_unificada():
     )
     """)
     
-    # 4. Insertar el administrador maestro si la tabla está vacía
+    # Insertar administrador maestro por defecto si está vacío
     cursor.execute("SELECT COUNT(*) FROM usuarios")
     if cursor.fetchone()[0] == 0:
         cursor.execute("""
@@ -84,7 +83,6 @@ def inicializar_base_de_datos_unificada():
     conn.commit()
     conn.close()
 
-# Evento controlado de inicio del servidor FastAPI
 @app.on_event("startup")
 async def startup_event():
     inicializar_base_de_datos_unificada()
@@ -102,7 +100,6 @@ def verificar_permiso(usuario: str, permiso_columna: str) -> bool:
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        # Adaptación para que consulte dinámicamente las nuevas columnas unificadas
         cursor.execute(f"SELECT {permiso_columna}, rol FROM usuarios WHERE usuario = ?", (usuario,))
         res = cursor.fetchone()
         conn.close()
@@ -130,7 +127,6 @@ async def login(request: Request, usuario: str = Form(...), contrasena: str = Fo
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        # CORREGIDO: Eliminamos la columna 'estado' que provocaba el desplome en cascada
         cursor.execute("SELECT usuario, rol FROM usuarios WHERE usuario = ? AND contrasena = ?", (usuario.strip(), contrasena))
         user_record = cursor.fetchone()
         conn.close()
@@ -150,7 +146,6 @@ async def login(request: Request, usuario: str = Form(...), contrasena: str = Fo
 
 @app.get("/panel", response_class=HTMLResponse)
 async def panel_clientes(request: Request, usuario=Depends(obtener_usuario_actual)):
-    # Comprobar si tiene acceso general al panel o si es Administrador
     p_gestionar = verificar_permiso(usuario, "p_gestionar")
     p_comisiones = verificar_permiso(usuario, "p_comisiones")
 
@@ -183,7 +178,7 @@ async def panel_clientes(request: Request, usuario=Depends(obtener_usuario_actua
 @app.get("/comisiones", response_class=HTMLResponse)
 async def ver_comisiones(request: Request, usuario=Depends(obtener_usuario_actual)):
     if not verificar_permiso(usuario, "p_comisiones"):
-        return HTMLResponse(content="No tienes privilegios para interactuar con el módulo de comisiones.", status_code=403)
+        return HTMLResponse(content="No tienes permisos para ver comisiones.", status_code=403)
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -224,7 +219,7 @@ async def usuarios_page(request: Request):
     user_data = cursor.fetchone()
     if not user_data or user_data[0].lower() != "admin":
         conn.close()
-        return HTMLResponse(content="Acceso denegado: Privilegios insuficientes.", status_code=403)
+        return RedirectResponse(url="/panel", status_code=303)
     
     cursor.execute("SELECT id, usuario, contrasena, rol, nombre_completo, puesto, p_gestionar, p_comisiones FROM usuarios")
     filas = cursor.fetchall()
@@ -277,7 +272,9 @@ async def crear_usuario(
     return RedirectResponse(url="/usuarios", status_code=303)
 
 
+# 🌟 CORREGIDO: Soporte unificado para procesar tanto '/editar-usuario' como '/login' según requiera tu diseño visual HTML
 @app.post("/editar-usuario")
+@app.post("/login/editar-usuario")
 async def editar_usuario(
     id_usuario: int = Form(...),
     usuario_login: str = Form(...),
@@ -300,7 +297,7 @@ async def editar_usuario(
         """, (usuario_login.strip(), nueva_contrasena, nombre_completo.strip(), puesto.strip(), valor_gestionar, valor_comisiones, id_usuario))
         conn.commit()
     except Exception as e:
-        print(f"Error detectado durante la edición: {e}")
+        print(f"Error al editar usuario: {e}")
     finally:
         conn.close()
     return RedirectResponse(url="/usuarios", status_code=303)
