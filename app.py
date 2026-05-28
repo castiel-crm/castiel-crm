@@ -10,9 +10,7 @@ app = FastAPI()
 # Configuración segura para manejo de sesiones
 app.add_middleware(SessionMiddleware, secret_key="super-secret-key-castiel-crm")
 
-# CONFIGURACIÓN DE RUTAS ABSOLUTAS (Crucial para Render)
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-templates_path = os.path.join(BASE_DIR, "templates")
+# CONFIGURACIÓN DE RUTAS ABSOLUTAS (Limpia y sin duplicados)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 templates_path = os.path.join(BASE_DIR, "templates")
 templates = Jinja2Templates(directory=templates_path)
@@ -109,8 +107,12 @@ def verificar_permiso(usuario: str, permiso_columna: str) -> bool:
 async def login_page(request: Request):
     if request.session.get("usuario"):
         return RedirectResponse(url="/panel", status_code=303)
-    return templates.TemplateResponse(request=request, name="login.html", context={"error": None})
-
+    
+    # Al pasar request de forma directa en el contexto, Jinja2 no fallará
+    return templates.TemplateResponse(
+        name="login.html", 
+        context={"request": request, "error": None}
+    )
 @app.post("/login")
 async def login(request: Request, usuario: str = Form(...), contrasena: str = Form(...)):
     try:
