@@ -203,7 +203,7 @@ async def listar_usuarios(request: Request, usuario=Depends(obtener_usuario_actu
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT usuario, nombre_complepleto, rol, estado, p_ver_clientes, p_gestionar_clientes, p_ver_comisiones FROM usuarios")
+    cursor.execute("SELECT usuario, nombre_completo, rol, estado, p_ver_clientes, p_gestionar_clientes, p_ver_comisiones FROM usuarios")
     usuarios = cursor.fetchall()
     conn.close()
 
@@ -249,7 +249,7 @@ async def crear_usuario(
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute(
-            """INSERT INTO usuarios (usuario, contrasena, nombre_complepleto, rol, estado, p_ver_clientes, p_gestionar_clientes, p_ver_comisiones)
+            """INSERT INTO usuarios (usuario, contrasena, nombre_completo, rol, estado, p_ver_clientes, p_gestionar_clientes, p_ver_comisiones)
                VALUES (?, ?, ?, 'asesor', 'Activo', ?, ?, ?)""",
             (usuario, contrasena, nombre_completo, p_ver_c, p_gest_c, p_ver_com)
         )
