@@ -246,19 +246,19 @@ async def crear_usuario(
     if not usuario_sesion:
         return RedirectResponse(url="/", status_code=303)
 
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        
-        # Insertar el nuevo asesor con rol 'asesor' y sus permisos asignados
+        # Se guarda el asesor con sus casillas de verificación
         cursor.execute(
             "INSERT INTO usuarios (usuario, contrasena, rol, p_gestionar, p_comisiones) VALUES (?, ?, ?, ?, ?)",
             (nuevo_usuario.strip(), contrasena, "asesor", p_gestionar, p_comisiones)
         )
         conn.commit()
-        conn.close()
     except sqlite3.IntegrityError:
-        # Si el usuario ya existe, se puede manejar o redirigir con error
+        # Si pones un nombre de usuario repetido, el sistema simplemente ignora el duplicado
         pass
+    finally:
+        conn.close()
     
     return RedirectResponse(url="/usuarios", status_code=303)
