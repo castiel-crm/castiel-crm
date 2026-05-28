@@ -108,7 +108,7 @@ async def login_page(request: Request):
     if request.session.get("usuario"):
         return RedirectResponse(url="/panel", status_code=303)
     
-    # Formato correcto exigido por la nueva versión: request va de primero
+    # El orden correcto que exige Jinja2 en tu servidor:
     return templates.TemplateResponse(
         request, 
         name="login.html", 
