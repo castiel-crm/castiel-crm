@@ -204,114 +204,61 @@ async def ver_comisiones(request: Request, usuario=Depends(obtener_usuario_actua
     )
 
 
-# --- SECCIÓN DE USUARIOS (ADMIN) ---
-
+# --- VISTA DE USUARIOS Y PERMISOS ---
 @app.get("/usuarios", response_class=HTMLResponse)
-async def listar_usuarios(request: Request, usuario=Depends(obtener_usuario_actual)):
-    if request.session.get("rol") != "admin":
-        return RedirectResponse(url="/panel", status_code=303)
-
+async def usuarios_page(request: Request):
+    usuario_sesion = request.session.get("usuario")
+    if not usuario_sesion:
+        return RedirectResponse(url="/", status_code=303)
+    
+    # Verificar si es administrador
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT usuario, nombre_completo, rol, estado, p_ver_clientes, p_gestionar_clientes, p_ver_comisiones FROM usuarios")
-    usuarios = cursor.fetchall()
+    cursor.execute("SELECT rol FROM usuarios WHERE usuario = ?", (usuario_sesion,))
+    user_data = cursor.fetchone()
+    
+    if not user_data or user_data[0] != "admin":
+        conn.close()
+        return HTMLResponse(content="Acceso denegado: Solo el administrador puede ver esta sección.", status_code=403)
+    
+    # Obtener la lista de todos los usuarios para mostrarlos en la tabla
+    cursor.execute("SELECT id, usuario, rol, p_gestionar, p_comisiones FROM usuarios")
+    lista_usuarios = [{"id": r[0], "usuario": r[1], "rol": r[2], "p_gestionar": r[3], "p_comisiones": r[4]} for r in cursor.fetchall()]
     conn.close()
 
-    lista_usuarios = [
-        {
-            "usuario": u[0],
-            "nombre_completo": u[1],
-            "rol": u[2],
-            "estado": u[3],
-            "p_ver_clientes": u[4],
-            "p_gestionar_clientes": u[5],
-            "p_ver_comisiones": u[6]
-        }
-        for u in usuarios
-    ]
-
+    # Formato correcto exigido por tu servidor: request de primero
     return templates.TemplateResponse(
-        request=request,
+        request,
         name="usuarios.html",
-        context={
-            "usuarios": lista_usuarios,
-            "usuario": usuario,
-            "rol": request.session.get("rol")
-        }
+        context={"usuarios": lista_usuarios, "usuario_actual": usuario_sesion}
     )
 
-
-@app.post("/usuarios/crear")
+# --- ACCIÓN PARA CREAR ASESOR DESDE EL FORMULARIO ---
+@app.post("/crear-usuario")
 async def crear_usuario(
     request: Request,
-    usuario: str = Form(...),
+    nuevo_usuario: str = Form(...),
     contrasena: str = Form(...),
-    nombre_completo: str = Form(...),
-    p_ver_c: int = Form(0),
-    p_gest_c: int = Form(0),
-    p_ver_com: int = Form(0),
-    usuario_act=Depends(obtener_usuario_actual)
+    p_gestionar: int = Form(0),
+    p_comisiones: int = Form(0)
 ):
-    if request.session.get("rol") != "admin":
-        return RedirectResponse(url="/panel", status_code=303)
+    usuario_sesion = request.session.get("usuario")
+    if not usuario_sesion:
+        return RedirectResponse(url="/", status_code=303)
 
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
+        
+        # Insertar el nuevo asesor con rol 'asesor' y sus permisos asignados
         cursor.execute(
-            """INSERT INTO usuarios (usuario, contrasena, nombre_completo, rol, estado, p_ver_clientes, p_gestionar_clientes, p_ver_comisiones)
-               VALUES (?, ?, ?, 'asesor', 'Activo', ?, ?, ?)""",
-            (usuario, contrasena, nombre_completo, p_ver_c, p_gest_c, p_ver_com)
+            "INSERT INTO usuarios (usuario, contrasena, rol, p_gestionar, p_comisiones) VALUES (?, ?, ?, ?, ?)",
+            (nuevo_usuario.strip(), contrasena, "asesor", p_gestionar, p_comisiones)
         )
         conn.commit()
-    except sqlite3.IntegrityError:
-        pass
-    finally:
         conn.close()
-
-    return RedirectResponse(url="/usuarios", status_code=303)
-
-
-@app.post("/usuarios/actualizar-permisos/{user_id}")
-async def actualizar_permisos(
-    request: Request,
-    user_id: str,
-    p_ver_c: int = Form(0),
-    p_gest_c: int = Form(0),
-    p_ver_com: int = Form(0),
-    usuario_act=Depends(obtener_usuario_actual)
-):
-    if request.session.get("rol") != "admin":
-        return RedirectResponse(url="/panel", status_code=303)
-
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        """UPDATE usuarios 
-           SET p_ver_clientes = ?, p_gestionar_clientes = ?, p_ver_comisiones = ? 
-           WHERE usuario = ?""",
-        (p_ver_c, p_gest_c, p_ver_com, user_id)
-    )
-    conn.commit()
-    conn.close()
-
-    return RedirectResponse(url="/usuarios", status_code=303)
-
-
-@app.post("/usuarios/cambiar-estado/{user_id}")
-async def cambiar_estado(
-    request: Request,
-    user_id: str,
-    nuevo_estado: str = Form(...),
-    usuario_act=Depends(obtener_usuario_actual)
-):
-    if request.session.get("rol") != "admin":
-        return RedirectResponse(url="/panel", status_code=303)
-
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE usuarios SET estado = ? WHERE usuario = ?", (nuevo_estado, user_id))
-    conn.commit()
-    conn.close()
-
+    except sqlite3.IntegrityError:
+        # Si el usuario ya existe, se puede manejar o redirigir con error
+        pass
+    
     return RedirectResponse(url="/usuarios", status_code=303)
