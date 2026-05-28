@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Corporación Castiel - Panel de Clientes</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            background-color: #f4f6f9;
+            color: #333;
+        }
+        .navbar {
+            background-color: #2c3e50;
+            color: white;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .navbar h1 {
+            margin: 0;
+            font-size: 20px;
+        }
+        .nav-links a {
+            color: #ecf0f1;
+            text-decoration: none;
+            margin-left: 20px;
+            font-weight: 500;
+        }
+        .nav-links a:hover {
+            text-decoration: underline;
+        }
+        .logout-btn {
+            background-color: #e74c3c;
+            padding: 8px 15px;
+            border-radius: 4px;
+        }
+        .logout-btn:hover {
+            background-color: #c0392b;
+            text-decoration: none !important;
+        }
+        .container {
+            padding: 30px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .welcome-box {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            margin-bottom: 30px;
+        }
+        .welcome-box h2 {
+            margin: 0 0 10px 0;
+            color: #2c3e50;
+        }
+        .welcome-box p {
+            margin: 0;
+            color: #7f8c8d;
+        }
+        .actions-bar {
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: flex-end;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn-primary {
+            background-color: #3498db;
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #2980b9;
+        }
+        .table-container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            overflow-hidden: true;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+        th, td {
+            padding: 15px;
+            border-bottom: 1px solid #eeeeee;
+        }
+        th {
+            background-color: #f8f9fa;
+            color: #34495e;
+            font-weight: 600;
+        }
+        tr:hover {
+            background-color: #fdfdfd;
+        }
+        .badge {
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .badge-admin {
+            background-color: #e3f2fd;
+            color: #0d47a1;
+        }
+        .badge-asesor {
+            background-color: #e8f5e9;
+            color: #1b5e20;
+        }
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #95a5a6;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="navbar">
+        <h1>Corporación Castiel - CRM</h1>
+        <div class="nav-links">
+            <a href="/panel">Clientes</a>
+            {% if p_comisiones or rol == 'admin' %}
+            <a href="/comisiones">Comisiones</a>
+            {% endif %}
+            {% if rol == 'admin' %}
+            <a href="/usuarios">Usuarios/Permisos</a>
+            {% endif %}
+            <a href="/" class="logout-btn">Cerrar Sesión</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="welcome-box">
+            <h2>¡Hola, {{ usuario }}!</h2>
+            <p>Bienvenido al sistema de administración. Tu rol actual es: <span class="badge {% if rol == 'admin' %}badge-admin{% else %}badge-asesor{% endif %}">{{ rol }}</span></p>
+        </div>
+
+        <div class="actions-bar">
+            {% if p_gestionar or rol == 'admin' %}
+            <button class="btn btn-primary" onclick="alert('Funcionalidad para añadir clientes (Próximamente)')">+ Añadir Cliente</button>
+            {% endif %}
+        </div>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Cliente / Nombre</th>
+                        <th>Negocio</th>
+                        <th>Teléfono</th>
+                        <th>Dirección</th>
+                        <th>Giro / Sector</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if clientes %}
+                        {% for cliente in clientes %}
+                        <tr>
+                            <td>{{ cliente.id }}</td>
+                            <strong><td>{{ cliente.cliente }}</td></strong>
+                            <td>{{ cliente.negocio if cliente.negocio else '-' }}</td>
+                            <td>{{ cliente.telefono if cliente.telefono else '-' }}</td>
+                            <td>{{ cliente.direccion if cliente.direccion else '-' }}</td>
+                            <td>{{ cliente.giro if cliente.giro else '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="6" class="no-data">No hay clientes registrados en la base de datos actualmente.</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</body>
+</html>
