@@ -16,85 +16,84 @@ app.add_middleware(SessionMiddleware, secret_key="super-secret-key-castiel-crm")
 
 templates = Jinja2Templates(directory="templates")
 
-DB_PATH = "castiel_crm.db"
+DB_PATH = "crm.db"
 
+# Función para inicializar la base de datos automáticamente si no existe o le faltan tablas
 def inicializar_base_de_datos():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Tabla de Clientes
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS clientes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            cliente TEXT NOT NULL,
-            negocio TEXT,
-            telefono TEXT,
-            direccion TEXT,
-            giro TEXT
-        )
-    ''')
+    # 1. Crear tabla de usuarios
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS usuarios (
+        usuario TEXT PRIMARY KEY,
+        contrasena TEXT NOT NULL,
+        nombre_completo TEXT NOT NULL,
+        rol TEXT NOT NULL,
+        estado TEXT NOT NULL,
+        p_ver_clientes INTEGER DEFAULT 0,
+        p_gestionar_clientes INTEGER DEFAULT 0,
+        p_ver_comisiones INTEGER DEFAULT 0
+    )
+    """)
     
-    # Tabla de Usuarios (con Permisos específicos)
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS usuarios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            usuario TEXT UNIQUE NOT NULL,
-            contrasena TEXT NOT NULL,
-            nombre_completo TEXT NOT NULL,
-            rol TEXT DEFAULT 'asesor',
-            estado TEXT DEFAULT 'Activo',
-            p_ver_clientes INTEGER DEFAULT 1,
-            p_gestionar_clientes INTEGER DEFAULT 1,
-            p_ver_comisiones INTEGER DEFAULT 0
-        )
-    ''')
+    # 2. Crear tabla de clientes
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS clientes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cliente TEXT NOT NULL,
+        negocio TEXT,
+        telefono TEXT,
+        direccion TEXT,
+        giro TEXT
+    )
+    """)
     
-    # Tabla de Comisiones
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS comisiones (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            cliente_id INTEGER,
-            monto REAL NOT NULL,
-            concepto TEXT,
-            fecha TEXT,
-            estado_pago TEXT DEFAULT 'Pendiente',
-            FOREIGN KEY(cliente_id) REFERENCES clientes(id)
-        )
-    ''')
+    # 3. Crear tabla de comisiones
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS comisiones (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        asesor TEXT NOT NULL,
+        monto REAL NOT NULL,
+        fecha TEXT NOT NULL,
+        descripcion TEXT
+    )
+    """)
     
-    # Insertar administrador por defecto con todos los permisos habilitados (1 = Sí, 0 = No)
-    cursor.execute("SELECT * FROM usuarios WHERE rol = 'admin'")
-    if not cursor.fetchone():
-        cursor.execute('''
-            INSERT INTO usuarios (usuario, contrasena, nombre_completo, rol, estado, p_ver_clientes, p_gestionar_clientes, p_ver_comisiones)
-            VALUES ('admin', 'admin123', 'Administrador Principal', 'admin', 'Activo', 1, 1, 1)
-        ''')
+    # 4. Insertar un usuario administrador por defecto si la tabla está vacía
+    cursor.execute("SELECT COUNT(*) FROM usuarios")
+    if cursor.fetchone()[0] == 0:
+        cursor.execute("""
+        INSERT INTO usuarios (usuario, contrasena, nombre_completo, rol, estado, p_ver_clientes, p_gestionar_clientes, p_ver_comisiones)
+        VALUES ('admin', 'admin123', 'Administrador General', 'admin', 'Activo', 1, 1, 1)
+        """)
         
     conn.commit()
     conn.close()
 
+# Ejecutamos la inicialización al encender el servidor
 inicializar_base_de_datos()
 
 # --- CONTROL DE ACCESOS Y PERMISOS ---
-def obtener_usuario_actual(request: Request):
+
+async def obtener_usuario_actual(request: Request):
     usuario = request.session.get("usuario")
     if not usuario:
         raise HTTPException(status_code=303, detail="No autenticado")
     return usuario
 
-def verificar_permiso(usuario: str, permiso_columna: str):
+def verificar_permiso(usuario: str, permiso_columna: str) -> bool:
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute(f"SELECT {permiso_columna}, rol FROM usuarios WHERE usuario = ?", (usuario,))
     res = cursor.fetchone()
     conn.close()
+    
     if res:
-        # El administrador siempre tiene todos los permisos
         if res[1] == "admin":
             return True
         return res[0] == 1
     return False
-
 # --- RUTAS DE AUTENTICACIÓN ---
 
 @app.get("/", response_class=HTMLResponse)
