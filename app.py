@@ -248,41 +248,43 @@ async def usuarios_page(request: Request):
         context={"usuarios": lista_usuarios, "usuario_actual": usuario_sesion}
     )
 
-# --- ACCIÓN PARA CREAR ASESOR DESDE EL FORMULARIO (VERSIÓN INTELIGENTE) ---
+# --- ACCIÓN PARA CREAR ASESOR DESDE EL FORMULARIO (CORREGIDA) ---
 @app.post("/crear-usuario")
 async def crear_usuario(
     request: Request,
     nuevo_usuario: str = Form(...),
     contrasena: str = Form(...),
-    p_gestionar: int = Form(0),
-    p_comisiones: int = Form(0)
+    p_gestionar: str = Form(None), # Recibe el estado del checkbox de forma segura
+    p_comisiones: str = Form(None)  # Recibe el estado del checkbox de forma segura
 ):
     usuario_sesion = request.session.get("usuario")
     if not usuario_sesion:
         return RedirectResponse(url="/", status_code=303)
 
+    # Convertimos la señal del checkbox HTML a 1 (marcado) o 0 (vacío)
+    valor_gestionar = 1 if p_gestionar else 0
+    valor_comisiones = 1 if p_comisiones else 0
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     try:
-        # Investigamos qué columnas existen en tu base de datos real
+        # Investigamos qué columnas existen en tu base de datos real en Render
         cursor.execute("PRAGMA table_info(usuarios)")
         columnas_reales = [col[1] for col in cursor.fetchall()]
         
-        # Mapeo inteligente: detectamos si usa nombres nuevos o viejos
+        # Mapeo inteligente de columnas (viejas o nuevas)
         col_gestionar = "p_gestionar" if "p_gestionar" in columnas_reales else "p_gestionar_clientes"
         col_comisiones = "p_comisiones" if "p_comisiones" in columnas_reales else "p_ver_comisiones"
         
-        # Construimos la consulta SQL de forma dinámica usando las columnas válidas
         query = f"""
             INSERT INTO usuarios (usuario, contrasena, rol, {col_gestionar}, {col_comisiones}) 
             VALUES (?, ?, ?, ?, ?)
         """
         
-        cursor.execute(query, (nuevo_usuario.strip(), contrasena, "asesor", p_gestionar, p_comisiones))
+        cursor.execute(query, (nuevo_usuario.strip(), contrasena, "asesor", valor_gestionar, valor_comisiones))
         conn.commit()
     except sqlite3.IntegrityError:
-        # Ignora si el usuario ya está repetido
         pass
     finally:
         conn.close()
