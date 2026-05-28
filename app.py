@@ -204,29 +204,44 @@ async def ver_comisiones(request: Request, usuario=Depends(obtener_usuario_actua
     )
 
 
-# --- VISTA DE USUARIOS Y PERMISOS ---
+# --- VISTA DE USUARIOS Y PERMISOS (VERSIÓN ULTRA-SEGURA) ---
 @app.get("/usuarios", response_class=HTMLResponse)
 async def usuarios_page(request: Request):
     usuario_sesion = request.session.get("usuario")
     if not usuario_sesion:
         return RedirectResponse(url="/", status_code=303)
     
-    # Verificar si es administrador
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+    
+    # 1. Validar el rol del usuario en sesión
     cursor.execute("SELECT rol FROM usuarios WHERE usuario = ?", (usuario_sesion,))
     user_data = cursor.fetchone()
-    
-    if not user_data or user_data[0] != "admin":
+    if not user_data or user_data[0].lower() != "admin":
         conn.close()
         return HTMLResponse(content="Acceso denegado: Solo el administrador puede ver esta sección.", status_code=403)
     
-    # Obtener la lista de todos los usuarios para mostrarlos en la tabla
-    cursor.execute("SELECT id, usuario, rol, p_gestionar, p_comisiones FROM usuarios")
-    lista_usuarios = [{"id": r[0], "usuario": r[1], "rol": r[2], "p_gestionar": r[3], "p_comisiones": r[4]} for r in cursor.fetchall()]
+    # 2. Investigar qué columnas tiene realmente tu tabla en Render para no tronar
+    cursor.execute("PRAGMA table_info(usuarios)")
+    columnas = [col[1] for col in cursor.fetchall()]
+    
+    # 3. Traer todos los registros de usuarios
+    cursor.execute("SELECT * FROM usuarios")
+    filas = cursor.fetchall()
+    
+    lista_usuarios = []
+    for fila in filas:
+        u_dict = dict(zip(columnas, fila))
+        lista_usuarios.append({
+            "id": u_dict.get("id") or u_dict.get("id_usuario") or 1,
+            "usuario": u_dict.get("usuario", "Desconocido"),
+            "rol": u_dict.get("rol", "asesor"),
+            "p_gestionar": u_dict.get("p_gestionar") or u_dict.get("p_gestionar_clientes") or 0,
+            "p_comisiones": u_dict.get("p_comisiones") or u_dict.get("p_ver_comisiones") or 0
+        })
+        
     conn.close()
 
-    # Formato correcto exigido por tu servidor: request de primero
     return templates.TemplateResponse(
         request,
         name="usuarios.html",
@@ -262,3 +277,8 @@ async def crear_usuario(
         conn.close()
     
     return RedirectResponse(url="/usuarios", status_code=303)
+# --- RUTA PARA CERRAR SESIÓN ---
+@app.get("/logout")
+async def logout(request: Request):
+    request.session.clear()  # Borra por completo los datos de sesión del navegador
+    return RedirectResponse(url="/", status_code=303)
