@@ -124,7 +124,7 @@ async def login(request: Request, usuario: str = Form(...), contrasena: str = Fo
         request.session["rol"] = rol
         return RedirectResponse(url="/panel", status_code=303)
 
-    return templates.TemplateResponse(request=request, name="login.html", context={"error": "Usuario o contraseña incorrectos."})
+    return templates.TemplateResponse(request=request, name="login.html", context={"error": "Usuario o contraseña incorrectos"})
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
