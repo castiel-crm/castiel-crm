@@ -204,7 +204,57 @@ async def ver_comisiones(request: Request, usuario=Depends(obtener_usuario_actua
     )
 
 
-# --- VISTA DE USUARIOS Y PERMISOS (VERSIÓN ULTRA-SEGURA) ---
+# =========================================================
+# 🔄 MIGRACIÓN Y ASIGNACIÓN DE PUESTOS PERSONALIZADOS
+# =========================================================
+
+def inicializar_base_datos():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # Crear tabla base si no existe
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario TEXT UNIQUE,
+            contrasena TEXT,
+            rol TEXT,
+            p_gestionar INTEGER DEFAULT 0,
+            p_comisiones INTEGER DEFAULT 0,
+            nombre_completo TEXT DEFAULT '',
+            puesto TEXT DEFAULT 'Asesor'
+        )
+    """)
+    
+    # 🔎 MIGRACIÓN EN VIVO: Verificar si faltan columnas en la base de Render
+    cursor.execute("PRAGMA table_info(usuarios)")
+    columnas_actuales = [col[1] for col in cursor.fetchall()]
+    
+    if "nombre_completo" not in columnas_actuales:
+        cursor.execute("ALTER TABLE usuarios ADD COLUMN nombre_completo TEXT DEFAULT ''")
+    if "puesto" not in columnas_actuales:
+        cursor.execute("ALTER TABLE usuarios ADD COLUMN puesto TEXT DEFAULT 'Asesor'")
+    if "p_gestionar" not in columnas_actuales and "p_gestionar_clientes" in columnas_actuales:
+        cursor.execute("ALTER TABLE usuarios ADD COLUMN p_gestionar INTEGER DEFAULT 0")
+    if "p_comisiones" not in columnas_actuales and "p_ver_comisiones" in columnas_actuales:
+        cursor.execute("ALTER TABLE usuarios ADD COLUMN p_comisiones INTEGER DEFAULT 0")
+
+    # Insertar administrador inicial si la tabla está completamente vacía
+    cursor.execute("SELECT COUNT(*) FROM usuarios")
+    if cursor.fetchone()[0] == 0:
+        cursor.execute("""
+            INSERT INTO usuarios (usuario, contrasena, rol, p_gestionar, p_comisiones, nombre_completo, puesto)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, ("admin", "admin123", "admin", 1, 1, "Eli Castillo", "Director Corporativo"))
+        
+    conn.commit()
+    conn.close()
+
+# Ejecutamos la inicialización al arrancar
+inicializar_base_datos()
+
+
+# --- VISTA PRINCIPAL DE USUARIOS Y PERMISOS ---
 @app.get("/usuarios", response_class=HTMLResponse)
 async def usuarios_page(request: Request):
     usuario_sesion = request.session.get("usuario")
@@ -214,84 +264,97 @@ async def usuarios_page(request: Request):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # 1. Validar el rol del usuario en sesión
+    # Validar rol
     cursor.execute("SELECT rol FROM usuarios WHERE usuario = ?", (usuario_sesion,))
     user_data = cursor.fetchone()
     if not user_data or user_data[0].lower() != "admin":
         conn.close()
-        return HTMLResponse(content="Acceso denegado: Solo el administrador puede ver esta sección.", status_code=403)
+        return HTMLResponse(content="Acceso denegado.", status_code=403)
     
-    # 2. Investigar qué columnas tiene realmente tu tabla en Render para no tronar
-    cursor.execute("PRAGMA table_info(usuarios)")
-    columnas = [col[1] for col in cursor.fetchall()]
-    
-    # 3. Traer todos los registros de usuarios
-    cursor.execute("SELECT * FROM usuarios")
+    cursor.execute("SELECT id, usuario, contrasena, rol, nombre_completo, puesto, p_gestionar, p_comisiones FROM usuarios")
     filas = cursor.fetchall()
     
     lista_usuarios = []
     for fila in filas:
-        u_dict = dict(zip(columnas, fila))
         lista_usuarios.append({
-            "id": u_dict.get("id") or u_dict.get("id_usuario") or 1,
-            "usuario": u_dict.get("usuario", "Desconocido"),
-            "rol": u_dict.get("rol", "asesor"),
-            "p_gestionar": u_dict.get("p_gestionar") or u_dict.get("p_gestionar_clientes") or 0,
-            "p_comisiones": u_dict.get("p_comisiones") or u_dict.get("p_ver_comisiones") or 0
+            "id": fila[0],
+            "usuario": fila[1],
+            "contrasena": fila[2],
+            "rol": fila[3],
+            "nombre_completo": fila[4] or "",
+            "puesto": fila[5] or "Asesor",
+            "p_gestionar": fila[6] or 0,
+            "p_comisiones": fila[7] or 0
         })
         
     conn.close()
-
     return templates.TemplateResponse(
         request,
         name="usuarios.html",
         context={"usuarios": lista_usuarios, "usuario_actual": usuario_sesion}
     )
 
-# --- ACCIÓN PARA CREAR ASESOR DESDE EL FORMULARIO (CORREGIDA) ---
+
+# --- ACCIÓN PARA CREAR NUEVO USUARIO/EMPLEADO ---
 @app.post("/crear-usuario")
 async def crear_usuario(
-    request: Request,
     nuevo_usuario: str = Form(...),
     contrasena: str = Form(...),
-    p_gestionar: str = Form(None), # Recibe el estado del checkbox de forma segura
-    p_comisiones: str = Form(None)  # Recibe el estado del checkbox de forma segura
+    nombre_completo: str = Form(""),
+    puesto: str = Form("Asesor"),
+    p_gestionar: str = Form(None),
+    p_comisiones: str = Form(None)
 ):
-    usuario_sesion = request.session.get("usuario")
-    if not usuario_sesion:
-        return RedirectResponse(url="/", status_code=303)
-
-    # Convertimos la señal del checkbox HTML a 1 (marcado) o 0 (vacío)
     valor_gestionar = 1 if p_gestionar else 0
     valor_comisiones = 1 if p_comisiones else 0
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    
     try:
-        # Investigamos qué columnas existen en tu base de datos real en Render
-        cursor.execute("PRAGMA table_info(usuarios)")
-        columnas_reales = [col[1] for col in cursor.fetchall()]
-        
-        # Mapeo inteligente de columnas (viejas o nuevas)
-        col_gestionar = "p_gestionar" if "p_gestionar" in columnas_reales else "p_gestionar_clientes"
-        col_comisiones = "p_comisiones" if "p_comisiones" in columnas_reales else "p_ver_comisiones"
-        
-        query = f"""
-            INSERT INTO usuarios (usuario, contrasena, rol, {col_gestionar}, {col_comisiones}) 
-            VALUES (?, ?, ?, ?, ?)
-        """
-        
-        cursor.execute(query, (nuevo_usuario.strip(), contrasena, "asesor", valor_gestionar, valor_comisiones))
+        cursor.execute("""
+            INSERT INTO usuarios (usuario, contrasena, rol, nombre_completo, puesto, p_gestionar, p_comisiones) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (nuevo_usuario.strip(), contrasena, "asesor", nombre_completo.strip(), puesto.strip(), valor_gestionar, valor_comisiones))
         conn.commit()
     except sqlite3.IntegrityError:
         pass
     finally:
         conn.close()
-    
     return RedirectResponse(url="/usuarios", status_code=303)
+
+
+# --- NUEVA ACCIÓN: EDITAR / RENOMBRAR / CAMBIAR CONTRASEÑA DE CUALQUIER EMPLEADO ---
+@app.post("/editar-usuario")
+async def editar_usuario(
+    id_usuario: int = Form(...),
+    usuario_login: str = Form(...),
+    nueva_contrasena: str = Form(...),
+    nombre_completo: str = Form(...),
+    puesto: str = Form(...),
+    p_gestionar: str = Form(None),
+    p_comisiones: str = Form(None)
+):
+    valor_gestionar = 1 if p_gestionar else 0
+    valor_comisiones = 1 if p_comisiones else 0
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            UPDATE usuarios 
+            SET usuario = ?, contrasena = ?, nombre_completo = ?, puesto = ?, p_gestionar = ?, p_comisiones = ?
+            WHERE id = ?
+        """, (usuario_login.strip(), nueva_contrasena, nombre_completo.strip(), puesto.strip(), valor_gestionar, valor_comisiones, id_usuario))
+        conn.commit()
+    except Exception as e:
+        print(f"Error al editar: {e}")
+    finally:
+        conn.close()
+    return RedirectResponse(url="/usuarios", status_code=303)
+
+
 # --- RUTA PARA CERRAR SESIÓN ---
 @app.get("/logout")
 async def logout(request: Request):
-    request.session.clear()  # Borra por completo los datos de sesión del navegador
+    request.session.clear()
     return RedirectResponse(url="/", status_code=303)
