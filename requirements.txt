@@ -2,5 +2,5 @@ fastapi
 uvicorn
 jinja2
 python-multipart
-itsdangerous
 itsdangerous==2.2.0
+starlette
