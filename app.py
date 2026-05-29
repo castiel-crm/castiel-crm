@@ -38,7 +38,7 @@ def inicializar_base_de_datos_unificada():
     )
     """)
     
-    # Verificar dinámicamente columnas existentes
+    # Verificar dinámicamente columnas existentes para evitar caídas en producción
     cursor.execute("PRAGMA table_info(usuarios)")
     columnas_actuales = [col[1] for col in cursor.fetchall()]
     
@@ -127,6 +127,7 @@ async def login(request: Request, usuario: str = Form(...), contrasena: str = Fo
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
+        # Tolerante: Ya no solicita ni busca la columna 'estado' evitando fallos de login
         cursor.execute("SELECT usuario, rol FROM usuarios WHERE usuario = ? AND contrasena = ?", (usuario.strip(), contrasena))
         user_record = cursor.fetchone()
         conn.close()
@@ -178,7 +179,7 @@ async def panel_clientes(request: Request, usuario=Depends(obtener_usuario_actua
 @app.get("/comisiones", response_class=HTMLResponse)
 async def ver_comisiones(request: Request, usuario=Depends(obtener_usuario_actual)):
     if not verificar_permiso(usuario, "p_comisiones"):
-        return HTMLResponse(content="No tienes permisos para ver comisiones.", status_code=403)
+        return HTMLResponse(content="No tienes privilegios para ver este módulo.", status_code=403)
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -245,15 +246,23 @@ async def usuarios_page(request: Request):
     )
 
 
+# 🌟 ULTRA-COMPATIBLE: Evita el 'Internal Server Error' capturando cualquier variación de nombres desde el HTML
 @app.post("/crear-usuario")
 async def crear_usuario(
-    nuevo_usuario: str = Form(...),
+    request: Request,
+    nuevo_usuario: str = Form(None),
+    usuario: str = Form(None), 
     contrasena: str = Form(...),
     nombre_completo: str = Form(""),
     puesto: str = Form("Asesor"),
     p_gestionar: str = Form(None),
     p_comisiones: str = Form(None)
 ):
+    # Detectar cuál parámetro del formulario se envió realmente
+    nombre_usuario_final = nuevo_usuario if nuevo_usuario else usuario
+    if not nombre_usuario_final:
+        return HTMLResponse(content="Error: El campo de usuario está vacío.", status_code=400)
+
     valor_gestionar = 1 if p_gestionar else 0
     valor_comisiones = 1 if p_comisiones else 0
 
@@ -263,7 +272,7 @@ async def crear_usuario(
         cursor.execute("""
             INSERT INTO usuarios (usuario, contrasena, rol, nombre_completo, puesto, p_gestionar, p_comisiones) 
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (nuevo_usuario.strip(), contrasena, "asesor", nombre_completo.strip(), puesto.strip(), valor_gestionar, valor_comisiones))
+        """, (nombre_usuario_final.strip(), contrasena, "asesor", nombre_completo.strip(), puesto.strip(), valor_gestionar, valor_comisiones))
         conn.commit()
     except sqlite3.IntegrityError:
         pass
@@ -272,18 +281,26 @@ async def crear_usuario(
     return RedirectResponse(url="/usuarios", status_code=303)
 
 
-# 🌟 CORREGIDO: Soporte unificado para procesar tanto '/editar-usuario' como '/login' según requiera tu diseño visual HTML
+# 🌟 ULTRA-COMPATIBLE: Procesa la edición sin importar si el HTML envía 'id_usuario' o 'id'
 @app.post("/editar-usuario")
 @app.post("/login/editar-usuario")
 async def editar_usuario(
-    id_usuario: int = Form(...),
-    usuario_login: str = Form(...),
+    id_usuario: int = Form(None),
+    id: int = Form(None),
+    usuario_login: str = Form(None),
+    usuario: str = Form(None),
     nueva_contrasena: str = Form(...),
-    nombre_completo: str = Form(...),
-    puesto: str = Form(...),
+    nombre_completo: str = Form(""),
+    puesto: str = Form("Asesor"),
     p_gestionar: str = Form(None),
     p_comisiones: str = Form(None)
 ):
+    id_final = id_usuario if id_usuario is not None else id
+    usuario_final = usuario_login if usuario_login else usuario
+
+    if id_final is None or not usuario_final:
+        return HTMLResponse(content="Error: Datos insuficientes para actualizar el usuario.", status_code=400)
+
     valor_gestionar = 1 if p_gestionar else 0
     valor_comisiones = 1 if p_comisiones else 0
 
@@ -294,7 +311,7 @@ async def editar_usuario(
             UPDATE usuarios 
             SET usuario = ?, contrasena = ?, nombre_completo = ?, puesto = ?, p_gestionar = ?, p_comisiones = ?
             WHERE id = ?
-        """, (usuario_login.strip(), nueva_contrasena, nombre_completo.strip(), puesto.strip(), valor_gestionar, valor_comisiones, id_usuario))
+        """, (usuario_final.strip(), nueva_contrasena, nombre_completo.strip(), puesto.strip(), valor_gestionar, valor_comisiones, id_final))
         conn.commit()
     except Exception as e:
         print(f"Error al editar usuario: {e}")
